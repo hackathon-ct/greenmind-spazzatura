@@ -713,7 +713,6 @@
                 }
             }
             
-            // Aggiungi questa nuova funzione per gestire il fallback:
             
             activateFallbackMode() {
                 console.log('Attivazione modalità fallback...');
@@ -842,8 +841,7 @@
                 this.updateTrucksList();
             }
             
-            // Aggiungi questa funzione per simulare aggiornamenti in modalità fallback:
-            
+ 
             setupFallbackListeners() {
                 // Simula aggiornamenti sensori IoT
                 setInterval(() => {
@@ -1994,127 +1992,7 @@
                 routeGroup.addLayer(infoMarker);
                 this.currentRoutes.set(truck.id, routeGroup);
             }
-                const cataniaZones = [
-                    { lat: 37.5079, lng: 15.0830, name: "Centro Storico", density: 'alta', points: 12 },
-                    { lat: 37.5150, lng: 15.0900, name: "Borgo-Sanzio", density: 'alta', points: 10 },
-                    { lat: 37.5000, lng: 15.0750, name: "Ognina-Picanello", density: 'media', points: 8 }
-                ];
-
-                const wasteTypes = ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'];
-
-                cataniaZones.forEach((zone, zoneIndex) => {
-                    for (let i = 0; i < zone.points; i++) {
-                        const type = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
-                        
-                        const point = {
-                            id: `fallback_${zoneIndex}_${i}`,
-                            lat: zone.lat + (Math.random() - 0.5) * 0.012,
-                            lng: zone.lng + (Math.random() - 0.5) * 0.012,
-                            type: type,
-                            fillLevel: Math.floor(Math.random() * 80) + 10,
-                            fillRate: 1.5 + Math.random() * 1.0,
-                            lastCollection: new Date(Date.now() - Math.random() * 5 * 24 * 60 * 60 * 1000),
-                            zone: zone.name,
-                            priority: Math.random() > 0.85 ? 'high' : 'normal',
-                            status: 'active',
-                            gravitationalPull: 1.5 + Math.random() * 1.0,
-                            resetTimer: 300 + Math.random() * 200,
-                            density: zone.density,
-                            source: 'fallback'
-                        };
-                        this.wastePoints.push(point);
-                    }
-                });
-
-                // Genera camion fallback
-                for (let i = 1; i <= 4; i++) {
-                    const targetType = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
-                    const truck = {
-                        id: `CT-${String(i).padStart(3, '0')}`,
-                        lat: 37.5079 + (Math.random() - 0.5) * 0.025,
-                        lng: 15.0830 + (Math.random() - 0.5) * 0.025,
-                        status: Math.random() > 0.8 ? 'maintenance' : 'active',
-                        capacity: 100,
-                        currentLoad: Math.floor(Math.random() * 30),
-                        driver: `Operatore ${i}`,
-                        lastUpdate: new Date(),
-                        route: [],
-                        targetType: targetType,
-                        speed: 0.8 + Math.random() * 0.4,
-                        efficiency: Math.random() * 0.3 + 0.7,
-                        isOnRoute: false,
-                        pacmanMode: false,
-                        firebaseSync: false
-                    };
-                    this.trucks.push(truck);
-                }
-            } base (da sostituire con i tuoi dati Firebase)
-                const cataniaZones = [
-                    { lat: 37.5079, lng: 15.0830, name: "Centro Storico", density: 'alta', points: 12 },
-                    { lat: 37.5150, lng: 15.0900, name: "Borgo-Sanzio", density: 'alta', points: 10 },
-                    { lat: 37.5000, lng: 15.0750, name: "Ognina-Picanello", density: 'media', points: 8 },
-                    { lat: 37.5200, lng: 15.0950, name: "Cibali", density: 'media', points: 7 },
-                    { lat: 37.4950, lng: 15.0650, name: "San Giovanni Galermo", density: 'alta', points: 11 },
-                    { lat: 37.5100, lng: 15.1000, name: "Nesima", density: 'media', points: 8 },
-                    { lat: 37.4900, lng: 15.0800, name: "Librino", density: 'alta', points: 10 },
-                    { lat: 37.5250, lng: 15.0700, name: "Monte Po", density: 'bassa', points: 5 }
-                ];
-
-                const wasteTypes = ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'];
-
-                // Genera punti raccolta
-                cataniaZones.forEach((zone, zoneIndex) => {
-                    for (let i = 0; i < zone.points; i++) {
-                        const type = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
-                        
-                        const point = {
-                            id: `static_${zoneIndex}_${i}`,
-                            lat: zone.lat + (Math.random() - 0.5) * 0.012,
-                            lng: zone.lng + (Math.random() - 0.5) * 0.012,
-                            type: type,
-                            fillLevel: Math.floor(Math.random() * 80) + 10,
-                            fillRate: 1.5 + Math.random() * 1.0,
-                            lastCollection: new Date(Date.now() - Math.random() * 5 * 24 * 60 * 60 * 1000),
-                            zone: zone.name,
-                            priority: Math.random() > 0.85 ? 'high' : 'normal',
-                            status: 'active',
-                            gravitationalPull: 1.5 + Math.random() * 1.0,
-                            resetTimer: 300 + Math.random() * 200,
-                            density: zone.density,
-                            source: 'static'
-                        };
-                        this.wastePoints.push(point);
-                    }
-                });
-
-                // Genera flotta camion
-                for (let i = 1; i <= 6; i++) {
-                    const targetType = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
-                    const truck = {
-                        id: `CT-${String(i).padStart(3, '0')}`,
-                        lat: 37.5079 + (Math.random() - 0.5) * 0.025,
-                        lng: 15.0830 + (Math.random() - 0.5) * 0.025,
-                        status: Math.random() > 0.8 ? 'maintenance' : (Math.random() > 0.6 ? 'active' : 'loading'),
-                        capacity: 100,
-                        currentLoad: Math.floor(Math.random() * 30),
-                        driver: `Operatore ${i}`,
-                        lastUpdate: new Date(),
-                        route: [],
-                        targetType: targetType,
-                        speed: 0.8 + Math.random() * 0.4,
-                        efficiency: Math.random() * 0.3 + 0.7,
-                        isOnRoute: false,
-                        pacmanMode: false,
-                        firebaseSync: false
-                    };
-                    this.trucks.push(truck);
-                }
-
-                this.renderWastePoints();
-                this.renderTrucks();
-                this.updateStats();
-                this.updateTrucksList();
-            }
+          
 
             renderWastePoints() {
                 this.wastePoints.forEach(point => {
@@ -2980,34 +2858,4 @@
     </script>
 </body>
 </html>
-                    location: { lat: 37.5050, lng: 15.0780 },
-                    issue: 'broken'
-                });
-            }, 240000); // 4 minuti
-            
-            // Mostra demo info
-            setTimeout(() => {
-                dashboard.showNotification('Demo avviata! Sistema Firebase + IoT + Dijkstra operativo', 'firebase');
-            }, 3000);
-        });
-
-        // Gestione responsività e cleanup
-        window.addEventListener('resize', function() {
-            if (dashboard && dashboard.map) {
-                setTimeout(() => {
-                    dashboard.map.invalidateSize();
-                }, 100);
-            }
-        });
-
-        window.addEventListener('beforeunload', function() {
-            if (dashboard) {
-                dashboard.currentRoutes.forEach(route => {
-                    dashboard.map.removeLayer(route);
-                });
-                dashboard.currentRoutes.clear();
-            }
-        });
-    </script>
-</body>
-</html>
+ 
