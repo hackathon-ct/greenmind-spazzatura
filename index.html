@@ -669,49 +669,17 @@
             }
 
             initFirebase() {
-                try {
-                    // Prova a inizializzare Firebase
-                    console.log('Tentativo connessione Firebase...');
-                    
-                    // Controlla se Firebase è disponibile
-                    if (typeof firebase !== 'undefined') {
-                        firebase.initializeApp(this.firebaseConfig);
-                        
-                        // Test connessione database
-                        firebase.database().ref('.info/connected').on('value', (snapshot) => {
-                            if (snapshot.val() === true) {
-                                this.firebaseConnected = true;
-                                this.updateFirebaseStatus();
-                                this.setupFirebaseListeners();
-                                this.showNotification('Firebase connesso! Database sincronizzato', 'firebase');
-                            } else {
-                                throw new Error('Firebase non raggiungibile');
-                            }
-                        });
-                        
-                        // Timeout per fallback
-                        setTimeout(() => {
-                            if (!this.firebaseConnected) {
-                                throw new Error('Timeout connessione Firebase');
-                            }
-                        }, 5000);
-                        
-                    } else {
-                        throw new Error('Firebase SDK non caricato');
-                    }
-                    
-                } catch (error) {
-                    console.error('Firebase non disponibile:', error);
-                    this.firebaseConnected = false;
-                    this.updateFirebaseStatus();
-                    this.showNotification('⚠️ Modalità Demo: Firebase non disponibile, uso dati simulati', 'warning');
-                    
-                    // Attiva modalità fallback
-                    setTimeout(() => {
-                        this.activateFallbackMode();
-                    }, 1500);
-                }
+                console.log('Firebase disabilitato, avvio diretto in modalità Demo.');
+                this.firebaseConnected = false;
+                this.updateFirebaseStatus();
+                this.showNotification('✅ Modalità Demo attiva con dati simulati', 'info');
+                
+                // Attiva immediatamente la modalità fallback
+                setTimeout(() => {
+                    this.activateFallbackMode();
+                }, 500);
             }
+
             
             
             activateFallbackMode() {
@@ -935,25 +903,18 @@
                 }, 30000);
             }
             
-            // Modifica anche la funzione updateFirebaseStatus per mostrare lo stato demo:
-            
+    
             updateFirebaseStatus() {
                 const statusElement = document.getElementById('firebase-status');
                 const textElement = document.getElementById('firebase-text');
                 const connectionIndicator = document.getElementById('connection-indicator');
-                
-                if (this.firebaseConnected) {
-                    statusElement.className = 'firebase-status firebase-online';
-                    textElement.textContent = 'Online & Sincronizzato';
-                    connectionIndicator.className = 'connection-status status-online';
-                    connectionIndicator.innerHTML = '<i class="fas fa-wifi"></i><span>Online</span>';
-                } else {
-                    statusElement.className = 'firebase-status firebase-offline';
-                    textElement.textContent = 'Modalità Demo';
-                    connectionIndicator.className = 'connection-status status-offline';
-                    connectionIndicator.innerHTML = '<i class="fas fa-database"></i><span>Demo Mode</span>';
-                }
+            
+                statusElement.className = 'firebase-status firebase-offline';
+                textElement.textContent = 'Modalità Demo';
+                connectionIndicator.className = 'connection-status status-offline';
+                connectionIndicator.innerHTML = '<i class="fas fa-database"></i><span>Demo Mode</span>';
             }
+
 
         
 
