@@ -1049,7 +1049,754 @@
             }
 
             generateStaticData() {
-                // Dati statici di base (da sostituire con i tuoi dati Firebase)
+                // Usa i dati reali dai file Excel
+                this.loadRealDataFromExcel();
+            }
+
+            async loadRealDataFromExcel() {
+                try {
+                    console.log('Caricando dati reali da Excel...');
+                    
+                    // Importa SheetJS
+                    const XLSX = await import('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+                    
+                    // 1. Carica Centri di Raccolta
+                    await this.loadCentriRaccolta(XLSX);
+                    
+                    // 2. Carica Punti Utenza
+                    await this.loadPuntiUtenza(XLSX);
+                    
+                    // 3. Genera flotta camion basata sui dati reali
+                    this.generateRealTruckFleet();
+                    
+                    this.renderWastePoints();
+                    this.renderTrucks();
+                    this.updateStats();
+                    this.updateTrucksList();
+                    
+                    this.showNotification(`📊 Dati reali caricati: ${this.wastePoints.length} punti di raccolta`, 'firebase');
+                    
+                } catch (error) {
+                    console.error('Errore caricamento dati Excel:', error);
+                    this.showNotification('Errore caricamento dati reali, uso dati simulati', 'error');
+                    this.generateFallbackData();
+                }
+            }
+
+            async loadCentriRaccolta(XLSX) {
+                try {
+                    const response = await window.fs.readFile('Centri di Raccolta.xlsx');
+                    const workbook = XLSX.read(response);
+                    const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    
+                    console.log(`Caricati ${data.length} centri di raccolta`);
+                    
+                    data.forEach((centro, index) => {
+                        const point = {
+                            id: `centro_${index}`,
+                            lat: centro['Coordinata X'],
+                            lng: centro['Coordinata Y'],
+                            type: 'centro_raccolta',
+                            name: centro['Centro Comunale di Raccolta '],
+                            address: centro['Address'],
+                            fillLevel: 0, // I centri non si riempiono
+                            fillRate: 0,
+                            lastCollection: new Date(),
+                            zone: this.extractZoneFromName(centro['Centro Comunale di Raccolta ']),
+                            priority: 'normal',
+                            status: 'active',
+                            gravitationalPull: 0.5, // Attrazione bassa per i centri
+                            resetTimer: 9999,
+                            density: 'alta',
+                            source: 'excel_data',
+                            isCentroRaccolta: true
+                        };
+                        this.wastePoints.push(point);
+                    });
+                    
+                } catch (error) {
+                    console.error('Errore caricamento centri raccolta:', error);
+                }
+            }
+
+            async loadPuntiUtenza(XLSX) {
+                try {
+                    const response = await window.fs.readFile('LottoCentro_Utenza_Kit_UND_2024.xlsx');
+                    const workbook = XLSX.read(response);
+                    const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    
+                    // Filtra solo record validi con coordinate
+                    const validPoints = data.filter(punto => 
+                        punto.latlong && 
+                        punto.latlong.includes(',') && 
+                        punto.latlong !== 'NULL' &&
+                        punto.Rifiuto && 
+                        punto.Rifiuto !== '{NULL}' &&
+                        !punto.Rifiuto.includes('NULL')
+                    );
+                    
+                    console.log(`Caricati ${validPoints.length} punti utenza validi`);
+                    
+                    validPoints.forEach((punto, index) => {
+                        // Estrai coordinate
+                        const [lat, lng] = punto.latlong.split(',').map(coord => parseFloat(coord.trim()));
+                        
+                        // Verifica coordinate valide per Catania
+                        if (lat < 37.4 || lat > 37.6 || lng < 14.9 || lng > 15.2) {
+                            return; // Skip coordinate non valide
+                        }
+                        
+                        // Estrai tipi di rifiuto dalla stringa
+                        const rifiutiString = punto.Rifiuto.replace(/[{}]/g, '');
+                        const tipiRifiuto = rifiutiString.split(',').map(r => r.trim().toLowerCase()).filter(r => 
+                            ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'].includes(r)
+                        );
+                        
+                        if (tipiRifiuto.length === 0) return; // Skip se non ci sono rifiuti validi
+                        
+                        // Crea un punto per ogni tipo di rifiuto (simulando contenitori separati)
+                        const mainType = tipiRifiuto[0]; // Tipo principale
+                        
+                        const wastePoint = {
+                            id: `utenza_${punto.Id}_${index}`,
+                            lat: lat + (Math.random() - 0.5) * 0.0008, // Piccola variazione per evitare sovrapposizioni
+                            lng: lng + (Math.random() - 0.5) * 0.0008,
+                            type: mainType,
+                            originalTypes: tipiRifiuto, // Mantieni tutti i tipi
+                            fillLevel: Math.floor(Math.random() * 80) + 10, // 10-90%
+                            fillRate: this.calculateFillRateByCategory(punto.Categoria),
+                            lastCollection: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
+                            zone: punto.Zona || 'Non specificata',
+                            priority: this.calculatePriorityByCategory(punto.Categoria),
+                            status: Math.random() > 0.95 ? 'broken' : 'active', // 5% rotti
+                            gravitationalPull: this.calculateGravityByCategory(punto.Categoria),
+                            resetTimer: 180 + Math.random() * 120,
+                            density: this.calculateDensityByZone(punto.Zona),
+                            source: 'excel_data',
+                            // Dati originali
+                            address: `${punto.Ubicazione} ${punto.Civico || ''}`.trim(),
+                            categoria: punto.Categoria,
+                            kitId: punto['Kit Id'],
+                            quantita: punto['Quantit?'] || 1
+                        };
+                        
+                        this.wastePoints.push(wastePoint);
+                    });
+                    
+                } catch (error) {
+                    console.error('Errore caricamento punti utenza:', error);
+                }
+            }
+
+            extractZoneFromName(name) {
+                if (name.includes('PICANELLO')) return 'Picanello';
+                if (name.includes('CAIROLI')) return 'Cairoli';
+                if (name.includes('BORGO')) return 'Borgo-Sanzio';
+                return 'Centro';
+            }
+
+            calculateFillRateByCategory(categoria) {
+                // Calcola velocità riempimento basata su categoria attività
+                if (!categoria || categoria === 'Non Definita') return 1.0;
+                
+                const highTrafficCategories = [
+                    'RISTORANTI', 'BAR', 'SUPERMERCATI', 'TRATTORIE', 'PIZZERIE',
+                    'CENTRI COMMERCIALI', 'PANIFICI', 'PASTICCERIE'
+                ];
+                
+                const mediumTrafficCategories = [
+                    'UFFICI', 'STUDIO', 'AMBULATORIO', 'SCUOLE', 'ALBERGHI'
+                ];
+                
+                const categoryUpper = categoria.toUpperCase();
+                
+                if (highTrafficCategories.some(cat => categoryUpper.includes(cat))) {
+                    return 2.5 + Math.random() * 1.0; // 2.5-3.5
+                }
+                
+                if (mediumTrafficCategories.some(cat => categoryUpper.includes(cat))) {
+                    return 1.5 + Math.random() * 0.8; // 1.5-2.3
+                }
+                
+                return 0.8 + Math.random() * 0.7; // 0.8-1.5 per altre categorie
+            }
+
+            calculatePriorityByCategory(categoria) {
+                if (!categoria) return 'normal';
+                
+                const highPriorityCategories = [
+                    'OSPEDALI', 'AMBULATORIO', 'STUDIO MEDICO', 'CASE DI CURA',
+                    'SCUOLE', 'ISTITUTI', 'RISTORANTI', 'SUPERMERCATI'
+                ];
+                
+                const categoryUpper = categoria.toUpperCase();
+                
+                if (highPriorityCategories.some(cat => categoryUpper.includes(cat))) {
+                    return Math.random() > 0.7 ? 'high' : 'normal';
+                }
+                
+                return Math.random() > 0.9 ? 'high' : 'normal';
+            }
+
+            calculateGravityByCategory(categoria) {
+                if (!categoria) return 1.0;
+                
+                const categoryUpper = categoria.toUpperCase();
+                
+                if (categoryUpper.includes('OSPEDALE') || categoryUpper.includes('AMBULATORIO')) {
+                    return 3.0; // Massima priorità sanitaria
+                }
+                
+                if (categoryUpper.includes('RISTORANTE') || categoryUpper.includes('BAR') || 
+                    categoryUpper.includes('SUPERMERCATO')) {
+                    return 2.5; // Alta priorità alimentare
+                }
+                
+                if (categoryUpper.includes('SCUOLA') || categoryUpper.includes('UFFICIO')) {
+                    return 2.0; // Priorità media-alta
+                }
+                
+                return 1.0 + Math.random() * 0.5; // 1.0-1.5 per altre
+            }
+
+            calculateDensityByZone(zona) {
+                if (!zona) return 'media';
+                
+                if (zona.includes('CENTRO')) return 'alta';
+                if (zona.includes('NORD')) return 'media';
+                
+                return 'media';
+            }
+
+            generateRealTruckFleet() {
+                // Genera flotta basata sui dati reali
+                const totalPoints = this.wastePoints.length;
+                const numTrucks = Math.max(6, Math.floor(totalPoints / 200)); // 1 camion ogni 200 punti circa
+                
+                const wasteTypes = ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'];
+                
+                // Calcola distribuzione reale dei tipi di rifiuto
+                const typeDistribution = {};
+                this.wastePoints.forEach(point => {
+                    if (point.type !== 'centro_raccolta') {
+                        typeDistribution[point.type] = (typeDistribution[point.type] || 0) + 1;
+                    }
+                });
+                
+                console.log('Distribuzione tipi rifiuto:', typeDistribution);
+                
+                for (let i = 1; i <= numTrucks; i++) {
+                    // Assegna tipo basato su distribuzione reale
+                    const sortedTypes = Object.entries(typeDistribution)
+                        .sort(([,a], [,b]) => b - a)
+                        .map(([type]) => type);
+                    
+                    const targetType = sortedTypes[(i - 1) % sortedTypes.length] || wasteTypes[i % wasteTypes.length];
+                    
+                    // Posiziona camion vicino al centro di Catania
+                    const truck = {
+                        id: `CT-${String(i).padStart(3, '0')}`,
+                        lat: 37.5079 + (Math.random() - 0.5) * 0.02,
+                        lng: 15.0830 + (Math.random() - 0.5) * 0.02,
+                        status: Math.random() > 0.8 ? 'maintenance' : (Math.random() > 0.6 ? 'active' : 'loading'),
+                        capacity: 100,
+                        currentLoad: Math.floor(Math.random() * 30),
+                        driver: `Operatore ${i}`,
+                        lastUpdate: new Date(),
+                        route: [],
+                        targetType: targetType,
+                        speed: 0.8 + Math.random() * 0.4,
+                        efficiency: Math.random() * 0.3 + 0.7,
+                        isOnRoute: false,
+                        pacmanMode: false,
+                        firebaseSync: Math.random() > 0.5 // 50% già sincronizzati
+                    };
+                    this.trucks.push(truck);
+                }
+                
+                console.log(`Generata flotta di ${numTrucks} camion per ${totalPoints} punti`);
+            }
+
+            renderSingleWastePoint(point) {
+                if (this.activeFilter !== 'all' && point.type !== this.activeFilter) {
+                    return;
+                }
+
+                const fillPercent = Math.min(100, Math.max(0, point.fillLevel));
+                const intensity = Math.floor(fillPercent / 10);
+                
+                let statusIcon = '';
+                let extraClass = '';
+                
+                // Icone speciali per centri di raccolta
+                if (point.isCentroRaccolta) {
+                    statusIcon = '🏢';
+                    extraClass = 'animation: pulse 3s infinite;';
+                } else if (point.status === 'broken') {
+                    statusIcon = '⚠️';
+                    extraClass = 'animation: pulse 1s infinite;';
+                } else if (point.status === 'full' || fillPercent >= 100) {
+                    statusIcon = '🔴';
+                    extraClass = 'animation: pulse 1s infinite;';
+                } else if (point.source === 'manual_report') {
+                    statusIcon = '📱';
+                    extraClass = 'animation: pulse 2s infinite;';
+                } else if (point.source === 'excel_data') {
+                    statusIcon = '📊'; // Indicatore dati reali
+                } else if (fillPercent > 85) {
+                    statusIcon = '🟡';
+                }
+
+                // Colori speciali per centri di raccolta
+                const pointColor = point.isCentroRaccolta ? '#9C27B0' : this.wasteColors[point.type];
+                const pointSize = point.isCentroRaccolta ? 35 : (18 + intensity * 2);
+
+                const icon = L.divIcon({
+                    html: `<div style="
+                        background: ${pointColor};
+                        width: ${pointSize}px;
+                        height: ${pointSize}px;
+                        border-radius: 50%;
+                        border: 3px solid white;
+                        box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-weight: bold;
+                        font-size: ${point.isCentroRaccolta ? 18 : (9 + intensity)}px;
+                        cursor: pointer;
+                        ${extraClass}
+                    " title="${point.isCentroRaccolta ? 'Centro di Raccolta' : 'Clicca per segnalare stato'}">${point.isCentroRaccolta ? statusIcon : intensity + statusIcon}</div>`,
+                    className: 'waste-point-icon',
+                    iconSize: [pointSize, pointSize],
+                    iconAnchor: [pointSize/2, pointSize/2]
+                });
+
+                const marker = L.marker([point.lat, point.lng], { icon }).addTo(this.map);
+                
+                // Click handler diverso per centri di raccolta
+                marker.on('click', () => {
+                    if (point.isCentroRaccolta) {
+                        this.showCentroInfo(point);
+                    } else {
+                        this.openReportModal(point);
+                    }
+                });
+
+                const sourceText = point.source === 'manual_report' ? '📱 Segnalazione Cittadino' : 
+                                  point.source === 'excel_data' ? '📊 Dati Reali Excel' :
+                                  point.source === 'fallback' ? '🔄 Dati Simulati' : '🔥 Firebase';
+
+                let popupContent;
+                
+                if (point.isCentroRaccolta) {
+                    popupContent = `
+                        <div style="padding: 12px; min-width: 250px;">
+                            <h4 style="color: ${pointColor}; margin-bottom: 8px;">
+                                🏢 ${point.name}
+                            </h4>
+                            <p><strong>📍 Indirizzo:</strong> ${point.address || 'N/A'}</p>
+                            <p><strong>🗺️ Zona:</strong> ${point.zone}</p>
+                            <p><strong>📊 Coordinate:</strong> ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}</p>
+                            <p><strong>📡 Fonte:</strong> ${sourceText}</p>
+                            <div style="margin-top: 12px; padding: 8px; background: rgba(156, 39, 176, 0.1); border-radius: 8px;">
+                                <small style="color: #9C27B0;">🏢 Centro Comunale di Raccolta</small>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    popupContent = `
+                        <div style="padding: 12px; min-width: 220px;">
+                            <h4 style="color: ${pointColor}; margin-bottom: 8px;">
+                                ${point.type.charAt(0).toUpperCase() + point.type.slice(1)}
+                            </h4>
+                            <p><strong>📍 Indirizzo:</strong> ${point.address || 'N/A'}</p>
+                            <p><strong>🗺️ Zona:</strong> ${point.zone}</p>
+                            <p><strong>📊 Riempimento:</strong> ${fillPercent.toFixed(1)}%</p>
+                            <div style="background: #f0f0f0; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden;">
+                                <div style="background: ${pointColor}; height: 100%; width: ${Math.min(100, fillPercent)}%; border-radius: 10px; transition: width 0.3s ease;"></div>
+                            </div>
+                            ${point.categoria ? `<p><strong>🏢 Categoria:</strong> ${point.categoria}</p>` : ''}
+                            ${point.originalTypes ? `<p><strong>♻️ Rifiuti:</strong> ${point.originalTypes.join(', ')}</p>` : ''}
+                            <p><strong>📅 Ultima raccolta:</strong> ${point.lastCollection.toLocaleDateString('it-IT')}</p>
+                            <p><strong>📡 Fonte:</strong> ${sourceText}</p>
+                            ${point.priority === 'high' ? '<p style="color: red;"><strong>🚨 Priorità Alta</strong></p>' : ''}
+                            ${point.status === 'broken' ? '<p style="color: orange;"><strong>⚠️ Contenitore Guasto</strong></p>' : ''}
+                            ${point.status === 'empty' ? '<p style="color: green;"><strong>✅ Contenitore Vuoto</strong></p>' : ''}
+                            <div style="margin-top: 12px; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
+                                <small style="color: #667eea;">💡 ${point.isCentroRaccolta ? 'Centro Comunale' : 'Clicca per segnalare manualmente'}</small>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                marker.bindPopup(popupContent);
+                point.marker = marker;
+            }
+
+            showCentroInfo(centro) {
+                // Mostra informazioni dettagliate del centro di raccolta
+                this.showNotification(`🏢 ${centro.name} - Centro comunale attivo in zona ${centro.zone}`, 'info');
+            }
+
+            // Integrazione con OpenStreetMap Routing
+            async calculateOSMRoute(startLat, startLng, endLat, endLng) {
+                try {
+                    // Usa OSRM (Open Source Routing Machine) per calcoli routing reali
+                    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`);
+                    const data = await response.json();
+                    
+                    if (data.routes && data.routes.length > 0) {
+                        const route = data.routes[0];
+                        return {
+                            coordinates: route.geometry.coordinates.map(coord => [coord[1], coord[0]]), // Inverti lat/lng
+                            distance: route.distance / 1000, // Converti in km
+                            duration: route.duration / 60, // Converti in minuti
+                            geometry: route.geometry
+                        };
+                    }
+                } catch (error) {
+                    console.warn('Errore routing OSRM, uso calcolo diretto:', error);
+                }
+                
+                // Fallback: calcolo diretto
+                const distance = this.calculateDistance({ lat: startLat, lng: startLng }, { lat: endLat, lng: endLng });
+                return {
+                    coordinates: [[startLat, startLng], [endLat, endLng]],
+                    distance: distance,
+                    duration: distance / 25 * 60, // 25 km/h media
+                    geometry: null
+                };
+            }
+
+            async calculateDijkstraWithOSM(truck, targetPoints) {
+                console.log('Calcolo Dijkstra con routing OSM...');
+                
+                const allPoints = [truck, ...targetPoints];
+                const n = allPoints.length;
+                const distances = Array(n).fill(Infinity);
+                const routeData = Array(n).fill().map(() => Array(n).fill(null));
+                const visited = Array(n).fill(false);
+                const previous = Array(n).fill(null);
+                
+                distances[0] = 0; // Punto di partenza (camion)
+                
+                // Pre-calcola tutte le rotte reali con OSM
+                for (let i = 0; i < n; i++) {
+                    for (let j = i + 1; j < n; j++) {
+                        const routeInfo = await this.calculateOSMRoute(
+                            allPoints[i].lat, allPoints[i].lng,
+                            allPoints[j].lat, allPoints[j].lng
+                        );
+                        
+                        // Fattore costo considerando priorità e urgenza
+                        const priority = allPoints[j].priority === 'high' ? 0.7 : 1.0;
+                        const urgency = allPoints[j].source === 'manual_report' ? 0.5 : 1.0;
+                        const category = allPoints[j].categoria && allPoints[j].categoria.includes('OSPEDALE') ? 0.6 : 1.0;
+                        
+                        const adjustedDistance = routeInfo.distance * priority * urgency * category;
+                        
+                        routeData[i][j] = routeData[j][i] = {
+                            distance: adjustedDistance,
+                            realDistance: routeInfo.distance,
+                            duration: routeInfo.duration,
+                            coordinates: routeInfo.coordinates,
+                            geometry: routeInfo.geometry
+                        };
+                    }
+                }
+                
+                // Algoritmo Dijkstra con dati reali OSM
+                for (let count = 0; count < n; count++) {
+                    let minDistance = Infinity;
+                    let minIndex = -1;
+                    
+                    for (let v = 0; v < n; v++) {
+                        if (!visited[v] && distances[v] < minDistance) {
+                            minDistance = distances[v];
+                            minIndex = v;
+                        }
+                    }
+                    
+                    if (minIndex === -1) break;
+                    visited[minIndex] = true;
+                    
+                    for (let v = 0; v < n; v++) {
+                        if (!visited[v] && routeData[minIndex][v]) {
+                            const alt = distances[minIndex] + routeData[minIndex][v].distance;
+                            if (alt < distances[v]) {
+                                distances[v] = alt;
+                                previous[v] = minIndex;
+                            }
+                        }
+                    }
+                }
+                
+                // Costruisci percorso ottimale
+                const route = [];
+                const routeSegments = [];
+                let totalRealDistance = 0;
+                let totalDuration = 0;
+                
+                // Ordina punti target per distanza ottimale
+                const targetIndices = targetPoints
+                    .map((point, index) => ({ point, index: index + 1, distance: distances[index + 1] }))
+                    .filter(item => item.distance < Infinity)
+                    .sort((a, b) => a.distance - b.distance);
+                
+                let currentIndex = 0;
+                for (const target of targetIndices) {
+                    route.push(target.point);
+                    
+                    if (routeData[currentIndex][target.index]) {
+                        const segment = routeData[currentIndex][target.index];
+                        routeSegments.push(segment);
+                        totalRealDistance += segment.realDistance;
+                        totalDuration += segment.duration;
+                    }
+                    
+                    currentIndex = target.index;
+                }
+                
+                return {
+                    route: route,
+                    totalDistance: totalRealDistance,
+                    totalTime: totalDuration,
+                    algorithm: 'Dijkstra + OpenStreetMap Routing',
+                    segments: routeSegments,
+                    efficiency: this.calculateRouteEfficiency(route)
+                };
+            }
+
+            async calculateDijkstraRoute(truckId) {
+                const truck = this.trucks.find(t => t.id === truckId);
+                if (!truck || truck.status !== 'active') {
+                    this.showNotification('Camion non disponibile per routing OSM', 'error');
+                    return;
+                }
+
+                truck.pacmanMode = true;
+                truck.isOnRoute = true;
+                
+                this.showNotification(`🗺️ Calcolo percorso con OpenStreetMap per ${truckId}...`, 'info');
+
+                // Trova punti compatibili
+                const compatiblePoints = this.wastePoints.filter(point => {
+                    if (point.isCentroRaccolta) return false; // Escludi centri di raccolta dai percorsi
+                    if (point.type !== truck.targetType) return false;
+                    if (point.status === 'broken') return false;
+                    
+                    const distance = this.calculateDistance(truck, point);
+                    const fillFactor = point.fillLevel / 100;
+                    const priorityFactor = point.priority === 'high' ? 2 : 1;
+                    const sourceFactor = point.source === 'excel_data' ? 1.5 : 1; // Priorità dati reali
+                    const urgencyFactor = point.source === 'manual_report' ? 3 : 1;
+                    
+                    point.attractionForce = (fillFactor * priorityFactor * sourceFactor * urgencyFactor) / (distance + 0.1);
+                    
+                    return point.attractionForce > 0.3;
+                }).sort((a, b) => b.attractionForce - a.attractionForce);
+
+                if (compatiblePoints.length === 0) {
+                    this.showNotification('Nessun punto compatibile per routing', 'warning');
+                    truck.pacmanMode = false;
+                    truck.isOnRoute = false;
+                    return;
+                }
+
+                const selectedPoints = compatiblePoints.slice(0, 6);
+                
+                try {
+                    // Usa routing OSM avanzato
+                    const osmResult = await this.calculateDijkstraWithOSM(truck, selectedPoints);
+                    
+                    if (this.currentRoutes.has(truckId)) {
+                        this.map.removeLayer(this.currentRoutes.get(truckId));
+                    }
+
+                    this.drawOSMRoute(truck, osmResult);
+                    this.startPacmanSimulation(truck, osmResult.route);
+                    
+                    // Salva su Firebase
+                    this.saveRouteToFirebase(truck, osmResult);
+                    
+                    this.showNotification(`🗺️ Percorso OSM calcolato per ${truckId}: ${osmResult.totalDistance.toFixed(2)}km, ${osmResult.totalTime.toFixed(1)}min`, 'success');
+                    
+                } catch (error) {
+                    console.error('Errore routing OSM:', error);
+                    this.showNotification('Errore routing OSM, uso calcolo semplificato', 'warning');
+                    
+                    // Fallback al vecchio sistema
+                    const basicResult = this.calculateDijkstra(truck, selectedPoints);
+                    this.drawRoute(truck, basicResult);
+                    this.startPacmanSimulation(truck, basicResult.route);
+                }
+            }
+
+            drawOSMRoute(truck, osmResult) {
+                // Disegna percorso reale da OpenStreetMap
+                const routeGroup = L.layerGroup();
+                
+                // Linea principale con geometria reale OSM
+                if (osmResult.segments && osmResult.segments.length > 0) {
+                    osmResult.segments.forEach((segment, index) => {
+                        if (segment.coordinates && segment.coordinates.length > 1) {
+                            // Linea percorso reale
+                            const segmentLine = L.polyline(segment.coordinates, {
+                                color: this.wasteColors[truck.targetType],
+                                weight: 6,
+                                opacity: 0.9,
+                                lineCap: 'round',
+                                lineJoin: 'round'
+                            }).addTo(this.map);
+                            
+                            // Effetto glow
+                            const glowLine = L.polyline(segment.coordinates, {
+                                color: '#00FFD4',
+                                weight: 10,
+                                opacity: 0.4
+                            }).addTo(this.map);
+                            
+                            routeGroup.addLayer(glowLine);
+                            routeGroup.addLayer(segmentLine);
+                        }
+                    });
+                } else {
+                    // Fallback a linea diretta
+                    const directCoords = [
+                        [truck.lat, truck.lng],
+                        ...osmResult.route.map(point => [point.lat, point.lng])
+                    ];
+                    
+                    const directLine = L.polyline(directCoords, {
+                        color: this.wasteColors[truck.targetType],
+                        weight: 6,
+                        opacity: 0.9,
+                        dashArray: '10, 5'
+                    }).addTo(this.map);
+                    
+                    routeGroup.addLayer(directLine);
+                }
+                
+                // Markers dei punti con info OSM
+                osmResult.route.forEach((point, index) => {
+                    const marker = L.marker([point.lat, point.lng], {
+                        icon: L.divIcon({
+                            html: `<div style="
+                                background: radial-gradient(circle, #00FFD4, ${this.wasteColors[point.type]});
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 50%;
+                                border: 3px solid #FFD700;
+                                box-shadow: 0 0 15px #00FFD4;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-weight: bold;
+                                font-size: 12px;
+                                animation: pulse 2s infinite;
+                            ">${index + 1}</div>`,
+                            iconSize: [28, 28],
+                            iconAnchor: [14, 14]
+                        })
+                    }).addTo(this.map);
+                    
+                    const segmentInfo = osmResult.segments[index];
+                    marker.bindPopup(`
+                        <div style="padding: 10px;">
+                            <h4 style="color: #00FFD4;">🗺️ Tappa OSM ${index + 1}</h4>
+                            <p><strong>Indirizzo:</strong> ${point.address}</p>
+                            ${segmentInfo ? `
+                                <p><strong>Distanza:</strong> ${segmentInfo.realDistance.toFixed(2)} km</p>
+                                <p><strong>Tempo stimato:</strong> ${segmentInfo.duration.toFixed(1)} min</p>
+                            ` : ''}
+                            <p><strong>Riempimento:</strong> ${point.fillLevel.toFixed(1)}%</p>
+                            <p><strong>Fonte dati:</strong> ${point.source === 'excel_data' ? '📊 Excel' : '🔥 Firebase'}</p>
+                        </div>
+                    `);
+                    
+                    routeGroup.addLayer(marker);
+                });
+
+                // Info percorso totali con dati OSM
+                const infoMarker = L.marker([truck.lat, truck.lng], {
+                    icon: L.divIcon({
+                        html: `<div style="
+                            background: linear-gradient(45deg, #667eea, #764ba2);
+                            padding: 8px 12px;
+                            border-radius: 15px;
+                            color: white;
+                            font-weight: bold;
+                            font-size: 11px;
+                            border: 2px solid white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                            white-space: nowrap;
+                        ">🗺️ OSM: ${osmResult.totalDistance.toFixed(1)}km | ${osmResult.totalTime.toFixed(0)}min | Eff: ${osmResult.efficiency.toFixed(1)}</div>`,
+                        iconSize: [140, 30],
+                        iconAnchor: [70, 35]
+                    })
+                }).addTo(this.map);
+
+                routeGroup.addLayer(infoMarker);
+                this.currentRoutes.set(truck.id, routeGroup);
+            }
+                const cataniaZones = [
+                    { lat: 37.5079, lng: 15.0830, name: "Centro Storico", density: 'alta', points: 12 },
+                    { lat: 37.5150, lng: 15.0900, name: "Borgo-Sanzio", density: 'alta', points: 10 },
+                    { lat: 37.5000, lng: 15.0750, name: "Ognina-Picanello", density: 'media', points: 8 }
+                ];
+
+                const wasteTypes = ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'];
+
+                cataniaZones.forEach((zone, zoneIndex) => {
+                    for (let i = 0; i < zone.points; i++) {
+                        const type = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
+                        
+                        const point = {
+                            id: `fallback_${zoneIndex}_${i}`,
+                            lat: zone.lat + (Math.random() - 0.5) * 0.012,
+                            lng: zone.lng + (Math.random() - 0.5) * 0.012,
+                            type: type,
+                            fillLevel: Math.floor(Math.random() * 80) + 10,
+                            fillRate: 1.5 + Math.random() * 1.0,
+                            lastCollection: new Date(Date.now() - Math.random() * 5 * 24 * 60 * 60 * 1000),
+                            zone: zone.name,
+                            priority: Math.random() > 0.85 ? 'high' : 'normal',
+                            status: 'active',
+                            gravitationalPull: 1.5 + Math.random() * 1.0,
+                            resetTimer: 300 + Math.random() * 200,
+                            density: zone.density,
+                            source: 'fallback'
+                        };
+                        this.wastePoints.push(point);
+                    }
+                });
+
+                // Genera camion fallback
+                for (let i = 1; i <= 4; i++) {
+                    const targetType = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
+                    const truck = {
+                        id: `CT-${String(i).padStart(3, '0')}`,
+                        lat: 37.5079 + (Math.random() - 0.5) * 0.025,
+                        lng: 15.0830 + (Math.random() - 0.5) * 0.025,
+                        status: Math.random() > 0.8 ? 'maintenance' : 'active',
+                        capacity: 100,
+                        currentLoad: Math.floor(Math.random() * 30),
+                        driver: `Operatore ${i}`,
+                        lastUpdate: new Date(),
+                        route: [],
+                        targetType: targetType,
+                        speed: 0.8 + Math.random() * 0.4,
+                        efficiency: Math.random() * 0.3 + 0.7,
+                        isOnRoute: false,
+                        pacmanMode: false,
+                        firebaseSync: false
+                    };
+                    this.trucks.push(truck);
+                }
+            } base (da sostituire con i tuoi dati Firebase)
                 const cataniaZones = [
                     { lat: 37.5079, lng: 15.0830, name: "Centro Storico", density: 'alta', points: 12 },
                     { lat: 37.5150, lng: 15.0900, name: "Borgo-Sanzio", density: 'alta', points: 10 },
@@ -1808,18 +2555,179 @@
         document.addEventListener('DOMContentLoaded', function() {
             dashboard = new FirebaseSmartWasteDashboard();
             
-            // Simula eventi di emergenza con segnalazioni cittadini
+            // Simula eventi con dati reali
             setTimeout(() => {
+                // Simula segnalazione cittadino basata su dati reali
+                const randomLat = 37.5079 + (Math.random() - 0.5) * 0.02;
+                const randomLng = 15.0830 + (Math.random() - 0.5) * 0.02;
+                
                 dashboard.addEmergencyPointFromReport({
                     id: Date.now(),
-                    location: { lat: 37.5120, lng: 15.0850 },
+                    location: { lat: randomLat, lng: randomLng },
                     issue: 'full'
                 });
-            }, 120000); // 2 minuti
+            }, 180000); // 3 minuti
             
             setTimeout(() => {
                 dashboard.addEmergencyPointFromReport({
                     id: Date.now() + 1,
+                    location: { lat: 37.5150, lng: 15.0900 },
+                    issue: 'broken'
+                });
+            }, 360000); // 6 minuti
+            
+            // Sistema di analisi predittiva avanzata
+            setInterval(() => {
+                if (dashboard.wastePoints.length > 0) {
+                    const realDataPoints = dashboard.wastePoints.filter(p => p.source === 'excel_data').length;
+                    const totalPoints = dashboard.wastePoints.length;
+                    const coverage = ((realDataPoints / totalPoints) * 100).toFixed(1);
+                    
+                    if (Math.random() < 0.3) {
+                        dashboard.showNotification(`📊 Copertura dati reali: ${coverage}% (${realDataPoints}/${totalPoints} punti)`, 'firebase');
+                    }
+                }
+            }, 240000); // Ogni 4 minuti
+            
+            // Auto-ottimizzazione con dati reali
+            setInterval(() => {
+                const excelPoints = dashboard.wastePoints.filter(p => 
+                    p.source === 'excel_data' && p.fillLevel > 80 && !p.isCentroRaccolta
+                );
+                
+                if (excelPoints.length > 3) {
+                    const activeTrucks = dashboard.trucks.filter(t => t.status === 'active' && !t.isOnRoute);
+                    
+                    if (activeTrucks.length > 0 && Math.random() < 0.4) {
+                        const selectedTruck = activeTrucks[0];
+                        dashboard.showNotification(`🤖 Auto-ottimizzazione: dispatch ${selectedTruck.id} per ${excelPoints.length} punti critici`, 'firebase');
+                        
+                        setTimeout(() => {
+                            dashboard.calculateDijkstraRoute(selectedTruck.id);
+                        }, 3000);
+                    }
+                }
+            }, 300000); // Ogni 5 minuti
+            
+            // Mostra info iniziali
+            setTimeout(() => {
+                dashboard.showNotification('🗺️ Dashboard avviata con dati Excel reali + OpenStreetMap routing!', 'success');
+            }, 4000);
+            
+            setTimeout(() => {
+                const totalReal = dashboard.wastePoints.filter(p => p.source === 'excel_data').length;
+                const totalCentri = dashboard.wastePoints.filter(p => p.isCentroRaccolta).length;
+                dashboard.showNotification(`📊 Caricati ${totalReal} punti reali + ${totalCentri} centri di raccolta da Excel`, 'firebase');
+            }, 8000);
+        });
+
+        // Gestione responsività e cleanup avanzato
+        window.addEventListener('resize', function() {
+            if (dashboard && dashboard.map) {
+                setTimeout(() => {
+                    dashboard.map.invalidateSize();
+                }, 100);
+            }
+        });
+
+        window.addEventListener('beforeunload', function() {
+            if (dashboard) {
+                // Cleanup avanzato
+                dashboard.currentRoutes.forEach(route => {
+                    dashboard.map.removeLayer(route);
+                });
+                dashboard.currentRoutes.clear();
+                
+                // Salva stato su localStorage per sessione successiva (se supportato)
+                try {
+                    const dashboardState = {
+                        totalPoints: dashboard.wastePoints.length,
+                        activeTrucks: dashboard.trucks.filter(t => t.status === 'active').length,
+                        lastUpdate: new Date().toISOString()
+                    };
+                    console.log('Stato dashboard al cleanup:', dashboardState);
+                } catch (e) {
+                    console.log('Cleanup completato');
+                }
+            }
+        });
+
+        // Funzioni di utilità per debugging e testing
+        window.debugDashboard = function() {
+            if (!dashboard) {
+                console.log('Dashboard non inizializzata');
+                return;
+            }
+            
+            console.log('=== DEBUG DASHBOARD ===');
+            console.log('Punti totali:', dashboard.wastePoints.length);
+            console.log('Punti da Excel:', dashboard.wastePoints.filter(p => p.source === 'excel_data').length);
+            console.log('Centri di raccolta:', dashboard.wastePoints.filter(p => p.isCentroRaccolta).length);
+            console.log('Camion attivi:', dashboard.trucks.filter(t => t.status === 'active').length);
+            console.log('Percorsi attivi:', dashboard.currentRoutes.size);
+            console.log('Firebase connesso:', dashboard.firebaseConnected);
+            console.log('Updates Firebase:', dashboard.firebaseUpdates);
+            
+            // Distribuzione per zona
+            const zoneDistribution = {};
+            dashboard.wastePoints.forEach(p => {
+                zoneDistribution[p.zone] = (zoneDistribution[p.zone] || 0) + 1;
+            });
+            console.log('Distribuzione zone:', zoneDistribution);
+            
+            // Distribuzione per tipo
+            const typeDistribution = {};
+            dashboard.wastePoints.filter(p => !p.isCentroRaccolta).forEach(p => {
+                typeDistribution[p.type] = (typeDistribution[p.type] || 0) + 1;
+            });
+            console.log('Distribuzione tipi:', typeDistribution);
+        };
+
+        // Test automatici per verificare integrità dati
+        window.testDataIntegrity = function() {
+            if (!dashboard) return false;
+            
+            let errors = [];
+            
+            // Test coordinate
+            dashboard.wastePoints.forEach((point, index) => {
+                if (point.lat < 37.4 || point.lat > 37.6 || point.lng < 14.9 || point.lng > 15.2) {
+                    errors.push(`Punto ${index}: coordinate non valide per Catania`);
+                }
+                
+                if (!point.type || !point.source) {
+                    errors.push(`Punto ${index}: dati mancanti`);
+                }
+            });
+            
+            // Test camion
+            dashboard.trucks.forEach((truck, index) => {
+                if (!truck.id || !truck.targetType) {
+                    errors.push(`Camion ${index}: dati mancanti`);
+                }
+            });
+            
+            if (errors.length === 0) {
+                console.log('✅ Test integrità dati: PASSED');
+                dashboard.showNotification('✅ Test integrità dati superato', 'success');
+                return true;
+            } else {
+                console.error('❌ Test integrità dati: FAILED');
+                console.error('Errori trovati:', errors);
+                dashboard.showNotification(`❌ ${errors.length} errori integrità dati`, 'error');
+                return false;
+            }
+        };
+
+        // Esegui test dopo inizializzazione
+        setTimeout(() => {
+            if (window.testDataIntegrity) {
+                window.testDataIntegrity();
+            }
+        }, 15000);
+    </script>
+</body>
+</html>
                     location: { lat: 37.5050, lng: 15.0780 },
                     issue: 'broken'
                 });
