@@ -1299,8 +1299,10 @@
             }
 
             generateStaticData() {
+                 // Forza sempre dati fallback per test
+                this.generateCompleteFallbackData();
                 // Usa i dati reali dai file Excel
-                this.loadRealDataFromExcel();
+               // this.loadRealDataFromExcel();
             }
 
             async loadRealDataFromExcel() {
@@ -1329,7 +1331,7 @@
                 } catch (error) {
                     console.error('Errore caricamento dati Excel:', error);
                     this.showNotification('Errore caricamento dati reali, uso dati simulati', 'error');
-                    this.generateFallbackData();
+                    this.generateCompleteFallbackData();
                 }
             }
 
