@@ -674,23 +674,275 @@
 
             initFirebase() {
                 try {
-                    // Inizializza Firebase (simulato per demo)
-                    console.log('Inizializzando Firebase...');
+                    // Prova a inizializzare Firebase
+                    console.log('Tentativo connessione Firebase...');
                     
-                    // Simula connessione Firebase
-                    setTimeout(() => {
-                        this.firebaseConnected = true;
-                        this.updateFirebaseStatus();
-                        this.setupFirebaseListeners();
-                        this.showNotification('Firebase connesso! Database sincronizzato', 'firebase');
-                    }, 2000);
+                    // Controlla se Firebase è disponibile
+                    if (typeof firebase !== 'undefined') {
+                        firebase.initializeApp(this.firebaseConfig);
+                        
+                        // Test connessione database
+                        firebase.database().ref('.info/connected').on('value', (snapshot) => {
+                            if (snapshot.val() === true) {
+                                this.firebaseConnected = true;
+                                this.updateFirebaseStatus();
+                                this.setupFirebaseListeners();
+                                this.showNotification('Firebase connesso! Database sincronizzato', 'firebase');
+                            } else {
+                                throw new Error('Firebase non raggiungibile');
+                            }
+                        });
+                        
+                        // Timeout per fallback
+                        setTimeout(() => {
+                            if (!this.firebaseConnected) {
+                                throw new Error('Timeout connessione Firebase');
+                            }
+                        }, 5000);
+                        
+                    } else {
+                        throw new Error('Firebase SDK non caricato');
+                    }
                     
                 } catch (error) {
-                    console.error('Errore Firebase:', error);
-                    this.showNotification('Errore connessione Firebase', 'error');
+                    console.error('Firebase non disponibile:', error);
+                    this.firebaseConnected = false;
+                    this.updateFirebaseStatus();
+                    this.showNotification('⚠️ Modalità Demo: Firebase non disponibile, uso dati simulati', 'warning');
+                    
+                    // Attiva modalità fallback
+                    setTimeout(() => {
+                        this.activateFallbackMode();
+                    }, 1500);
                 }
             }
+            
+            // Aggiungi questa nuova funzione per gestire il fallback:
+            
+            activateFallbackMode() {
+                console.log('Attivazione modalità fallback...');
+                
+                // Simula listeners Firebase con dati locali
+                this.setupFallbackListeners();
+                
+                // Genera dati demo se non ci sono dati Excel
+                if (this.wastePoints.length === 0) {
+                    this.generateCompleteFallbackData();
+                }
+                
+                // Simula aggiornamenti periodici
+                this.startFallbackSimulation();
+                
+                this.showNotification('✅ Modalità Demo attiva con dati simulati', 'info');
+            }
+            
 
+            generateCompleteFallbackData() {
+                console.log('Generazione dati fallback completi...');
+                
+                const cataniaZones = [
+                    { lat: 37.5079, lng: 15.0830, name: "Centro Storico", density: 'alta', points: 15 },
+                    { lat: 37.5150, lng: 15.0900, name: "Borgo-Sanzio", density: 'alta', points: 12 },
+                    { lat: 37.5000, lng: 15.0750, name: "Ognina-Picanello", density: 'media', points: 10 },
+                    { lat: 37.5200, lng: 15.0950, name: "Cibali", density: 'media', points: 8 },
+                    { lat: 37.4950, lng: 15.0650, name: "San Giovanni Galermo", density: 'alta', points: 14 },
+                    { lat: 37.5100, lng: 15.1000, name: "Nesima", density: 'media', points: 9 },
+                    { lat: 37.4900, lng: 15.0800, name: "Librino", density: 'alta', points: 13 },
+                    { lat: 37.5250, lng: 15.0700, name: "Monte Po", density: 'bassa', points: 6 }
+                ];
+            
+                const wasteTypes = ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'];
+                const categories = ['RISTORANTE', 'BAR', 'UFFICIO', 'RESIDENZIALE', 'NEGOZIO', 'SCUOLA', 'OSPEDALE'];
+            
+                // Genera punti raccolta
+                cataniaZones.forEach((zone, zoneIndex) => {
+                    for (let i = 0; i < zone.points; i++) {
+                        const type = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
+                        const categoria = categories[Math.floor(Math.random() * categories.length)];
+                        
+                        const point = {
+                            id: `demo_${zoneIndex}_${i}`,
+                            lat: zone.lat + (Math.random() - 0.5) * 0.015,
+                            lng: zone.lng + (Math.random() - 0.5) * 0.015,
+                            type: type,
+                            fillLevel: Math.floor(Math.random() * 90) + 10,
+                            fillRate: this.calculateFillRateByCategory(categoria),
+                            lastCollection: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
+                            zone: zone.name,
+                            priority: Math.random() > 0.8 ? 'high' : 'normal',
+                            status: Math.random() > 0.95 ? 'broken' : 'active',
+                            gravitationalPull: this.calculateGravityByCategory(categoria),
+                            resetTimer: 180 + Math.random() * 120,
+                            density: zone.density,
+                            source: 'demo_fallback',
+                            address: `Via Demo ${i + 1}, ${zone.name}`,
+                            categoria: categoria
+                        };
+                        this.wastePoints.push(point);
+                    }
+                });
+            
+                // Genera alcuni centri di raccolta demo
+                const centriDemo = [
+                    { name: "Centro Raccolta Nord", lat: 37.5250, lng: 15.0850 },
+                    { name: "Centro Raccolta Sud", lat: 37.4850, lng: 15.0750 },
+                    { name: "Centro Raccolta Est", lat: 37.5079, lng: 15.1050 },
+                    { name: "Centro Raccolta Ovest", lat: 37.5079, lng: 15.0650 }
+                ];
+            
+                centriDemo.forEach((centro, index) => {
+                    const point = {
+                        id: `centro_demo_${index}`,
+                        lat: centro.lat,
+                        lng: centro.lng,
+                        type: 'centro_raccolta',
+                        name: centro.name,
+                        address: `Piazza Demo ${index + 1}`,
+                        fillLevel: 0,
+                        fillRate: 0,
+                        lastCollection: new Date(),
+                        zone: 'Demo Zone',
+                        priority: 'normal',
+                        status: 'active',
+                        gravitationalPull: 0.5,
+                        resetTimer: 9999,
+                        density: 'alta',
+                        source: 'demo_fallback',
+                        isCentroRaccolta: true
+                    };
+                    this.wastePoints.push(point);
+                });
+            
+                // Genera flotta camion demo
+                const numTrucks = 8;
+                for (let i = 1; i <= numTrucks; i++) {
+                    const targetType = wasteTypes[(i - 1) % wasteTypes.length];
+                    
+                    const truck = {
+                        id: `DEMO-${String(i).padStart(3, '0')}`,
+                        lat: 37.5079 + (Math.random() - 0.5) * 0.03,
+                        lng: 15.0830 + (Math.random() - 0.5) * 0.03,
+                        status: i <= 5 ? 'active' : (i <= 7 ? 'loading' : 'maintenance'),
+                        capacity: 100,
+                        currentLoad: Math.floor(Math.random() * 40),
+                        driver: `Demo Driver ${i}`,
+                        lastUpdate: new Date(),
+                        route: [],
+                        targetType: targetType,
+                        speed: 0.8 + Math.random() * 0.4,
+                        efficiency: Math.random() * 0.3 + 0.7,
+                        isOnRoute: false,
+                        pacmanMode: false,
+                        firebaseSync: false // Sempre false in modalità demo
+                    };
+                    this.trucks.push(truck);
+                }
+            
+                console.log(`Generati ${this.wastePoints.length} punti demo e ${this.trucks.length} camion`);
+                
+                this.renderWastePoints();
+                this.renderTrucks();
+                this.updateStats();
+                this.updateTrucksList();
+            }
+            
+            // Aggiungi questa funzione per simulare aggiornamenti in modalità fallback:
+            
+            setupFallbackListeners() {
+                // Simula aggiornamenti sensori IoT
+                setInterval(() => {
+                    const mockSensorData = {
+                        noiseLevel: Math.floor(Math.random() * 30) + 40,
+                        crowdLevel: Math.floor(Math.random() * 100),
+                        trafficLevel: Math.floor(Math.random() * 100),
+                        timestamp: new Date().toISOString()
+                    };
+                    this.updateIoTSensors(mockSensorData);
+                    
+                    this.firebaseUpdates++;
+                    document.getElementById('firebase-updates').textContent = this.firebaseUpdates;
+                }, 8000);
+            
+                // Simula aggiornamenti punti raccolta
+                setInterval(() => {
+                    this.wastePoints.forEach(point => {
+                        if (!point.isCentroRaccolta && Math.random() < 0.1) {
+                            point.fillLevel = Math.min(100, point.fillLevel + Math.random() * 5);
+                            
+                            if (point.marker && (this.activeFilter === 'all' || point.type === this.activeFilter)) {
+                                this.map.removeLayer(point.marker);
+                                this.renderSingleWastePoint(point);
+                            }
+                        }
+                    });
+                }, 15000);
+            
+                // Simula segnalazioni cittadini
+                setInterval(() => {
+                    if (Math.random() < 0.15) {
+                        const report = {
+                            id: Date.now(),
+                            type: 'user_report',
+                            location: {
+                                lat: 37.5079 + (Math.random() - 0.5) * 0.03,
+                                lng: 15.0830 + (Math.random() - 0.5) * 0.03
+                            },
+                            issue: ['full', 'broken', 'overflow'][Math.floor(Math.random() * 3)],
+                            timestamp: new Date().toISOString()
+                        };
+                        this.handleManualReports(report);
+                    }
+                }, 45000);
+            }
+            
+            startFallbackSimulation() {
+                console.log('Avvio simulazione fallback...');
+                
+                // Auto-dispatch periodico per demo
+                setInterval(() => {
+                    const activeTrucks = this.trucks.filter(t => t.status === 'active' && !t.isOnRoute);
+                    const urgentPoints = this.wastePoints.filter(p => 
+                        !p.isCentroRaccolta && (p.fillLevel > 85 || p.priority === 'high')
+                    );
+                    
+                    if (activeTrucks.length > 0 && urgentPoints.length > 3 && Math.random() < 0.4) {
+                        const truck = activeTrucks[Math.floor(Math.random() * activeTrucks.length)];
+                        this.showNotification(`🤖 Demo: Auto-dispatch ${truck.id}`, 'info');
+                        
+                        setTimeout(() => {
+                            this.calculateDijkstraRoute(truck.id);
+                        }, 2000);
+                    }
+                }, 60000);
+            
+                // Movimento casuale camion non in servizio
+                setInterval(() => {
+                    this.trucks.forEach(truck => {
+                        if (truck.status === 'active' && !truck.isOnRoute) {
+                            truck.lat += (Math.random() - 0.5) * 0.0008;
+                            truck.lng += (Math.random() - 0.5) * 0.0008;
+                            
+                            if (truck.marker) {
+                                truck.marker.setLatLng([truck.lat, truck.lng]);
+                            }
+                        }
+                    });
+                }, 10000);
+            
+                // Cambio stato casuale camion
+                setInterval(() => {
+                    const truck = this.trucks[Math.floor(Math.random() * this.trucks.length)];
+                    if (!truck.isOnRoute && Math.random() < 0.2) {
+                        const states = ['active', 'loading', 'maintenance'];
+                        truck.status = states[Math.floor(Math.random() * states.length)];
+                        this.updateTrucksList();
+                        this.renderTrucks();
+                    }
+                }, 30000);
+            }
+            
+            // Modifica anche la funzione updateFirebaseStatus per mostrare lo stato demo:
+            
             updateFirebaseStatus() {
                 const statusElement = document.getElementById('firebase-status');
                 const textElement = document.getElementById('firebase-text');
@@ -703,11 +955,13 @@
                     connectionIndicator.innerHTML = '<i class="fas fa-wifi"></i><span>Online</span>';
                 } else {
                     statusElement.className = 'firebase-status firebase-offline';
-                    textElement.textContent = 'Connessione in corso...';
+                    textElement.textContent = 'Modalità Demo';
                     connectionIndicator.className = 'connection-status status-offline';
-                    connectionIndicator.innerHTML = '<i class="fas fa-wifi"></i><span>Offline</span>';
+                    connectionIndicator.innerHTML = '<i class="fas fa-database"></i><span>Demo Mode</span>';
                 }
             }
+
+        
 
             setupFirebaseListeners() {
                 // Simula listeners Firebase Realtime Database
