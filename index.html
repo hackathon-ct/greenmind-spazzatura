@@ -479,86 +479,28 @@
             }
         }
 
-        /* Responsive Dashboard */
-        @media (max-width: 1100px) {
-            .dashboard {
-                grid-template-columns: 220px 1fr;
-            }
-            .sidebar {
-                padding: 10px;
-            }
-            .header {
-                flex-direction: column;
-                gap: 10px;
-                align-items: flex-start;
-            }
-            .stats {
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-        }
-        
-        @media (max-width: 800px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
-                height: auto;
-            }
-            .sidebar {
-                position: static;
-                width: 100%;
-                max-height: none;
-                box-shadow: none;
-                border-right: none;
-                padding: 10px 5px;
-            }
-            .main-content {
-                height: auto;
-            }
-            #map {
-                height: 350px;
-                min-height: 250px;
-            }
-            .header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-                padding: 10px 5px;
-            }
-            .stats {
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-        }
-        
-        @media (max-width: 500px) {
-            .sidebar {
-                padding: 5px 2px;
-                font-size: 0.95em;
-            }
-            .header {
-                font-size: 0.95em;
-                padding: 8px 2px;
-            }
-            .stat-card {
-                min-width: 55px;
-                font-size: 0.95em;
-                padding: 5px 6px;
-            }
-            .control-title {
-                font-size: 0.95em;
-                padding-bottom: 2px;
-            }
-            .modal-content {
-                padding: 10px;
-                font-size: 0.95em;
-            }
-            .notification {
-                max-width: 95vw;
-                padding: 10px 8px;
-                font-size: 0.95em;
-            }
-        }
+     @media (max-width: 768px) {
+  .sidebar {
+    max-height: none; /* Remove fixed max-height */
+    height: auto;
+    overflow-y: auto; /* Allow scrolling if needed */
+  }
+
+  .main-content {
+    height: auto; /* Let it expand */
+    min-height: calc(100vh - 70px); /* Adjust based on header height */
+    overflow-y: auto;
+  }
+
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
     </style>
 </head>
 <body>
