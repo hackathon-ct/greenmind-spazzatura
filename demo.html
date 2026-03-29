@@ -4,13 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Smart Waste Catania - Firebase + IoT</title>
+    <title>Dashboard Smart Waste Catania - SQLite Locale + IoT</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    
-    <!-- Firebase SDK -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-app-compat.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-database-compat.min.js"></script>
+
+    <!-- sql.js - SQLite in the browser via WebAssembly -->
+    <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/sql-wasm.js"></script>
     
     <style>
         * {
@@ -602,11 +601,11 @@
 <body>
     <div class="dashboard">
         <div class="sidebar">
-            <!-- Firebase Status -->
+            <!-- DB Status -->
             <div id="firebase-status" class="firebase-status firebase-offline">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <i class="fas fa-database"></i>
-                    <span>Firebase: <span id="firebase-text">Connessione...</span></span>
+                    <span>DB: <span id="firebase-text">Inizializzazione...</span></span>
                 </div>
             </div>
 
@@ -661,7 +660,7 @@
             <!-- Truck Fleet -->
             <div class="control-panel">
                 <div class="control-title">
-                    <i class="fas fa-truck"></i> Flotta Firebase
+                    <i class="fas fa-truck"></i> Flotta Camion
                 </div>
                 <div id="trucks-list"></div>
             </div>
@@ -686,7 +685,7 @@
             <div class="header">
                 <div class="logo">
                     <i class="fas fa-recycle" style="animation: spin 4s linear infinite;"></i>
-                    Smart Waste Catania Firebase
+                    Smart Waste Catania
                 </div>
                 <div id="connection-indicator" class="connection-status status-offline">
                     <i class="fas fa-wifi"></i>
@@ -744,6 +743,146 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <script>
 
+        // =====================================================================
+        // LocalDatabase - SQLite locale via sql.js (WebAssembly)
+        // Sostituisce Firebase per la gestione persistente dei dati
+        // =====================================================================
+        class LocalDatabase {
+            constructor() {
+                this.db = null;
+                this.ready = false;
+            }
+
+            async init() {
+                try {
+                    const SQL = await initSqlJs({
+                        locateFile: file =>
+                            `https://cdn.jsdelivr.net/npm/sql.js@1.10.2/dist/${file}`
+                    });
+                    this.db = new SQL.Database();
+                    this._createTables();
+                    this.ready = true;
+                    console.log('✅ Database SQLite locale inizializzato');
+                } catch (err) {
+                    console.error('Errore inizializzazione SQLite:', err);
+                    throw err;
+                }
+            }
+
+            _createTables() {
+                this.db.run(`
+                    CREATE TABLE IF NOT EXISTS waste_points (
+                        id TEXT PRIMARY KEY,
+                        lat REAL NOT NULL,
+                        lng REAL NOT NULL,
+                        type TEXT NOT NULL,
+                        types TEXT,
+                        address TEXT,
+                        zona TEXT,
+                        categoria TEXT,
+                        fill_level REAL DEFAULT 50,
+                        fill_rate REAL DEFAULT 1.0,
+                        status TEXT DEFAULT 'active',
+                        priority TEXT DEFAULT 'normal',
+                        source TEXT DEFAULT 'excel_data',
+                        is_centro_raccolta INTEGER DEFAULT 0,
+                        kit_id TEXT,
+                        quantita INTEGER DEFAULT 1
+                    );
+                    CREATE TABLE IF NOT EXISTS iot_readings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        noise_level REAL,
+                        crowd_level REAL,
+                        traffic_level REAL,
+                        timestamp TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        point_id TEXT,
+                        issue TEXT,
+                        timestamp TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS routes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        truck_id TEXT,
+                        route_data TEXT,
+                        distance REAL,
+                        timestamp TEXT
+                    );
+                `);
+            }
+
+            insertWastePoint(point) {
+                if (!this.ready) return;
+                this.db.run(
+                    `INSERT OR REPLACE INTO waste_points
+                     (id, lat, lng, type, types, address, zona, categoria,
+                      fill_level, fill_rate, status, priority, source,
+                      is_centro_raccolta, kit_id, quantita)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                    [
+                        point.id, point.lat, point.lng,
+                        point.type, JSON.stringify(point.originalTypes || point.types || []),
+                        point.address || '', point.zone || point.zona || '',
+                        point.categoria || '',
+                        point.fillLevel || 50, point.fillRate || 1.0,
+                        point.status || 'active', point.priority || 'normal',
+                        point.source || 'excel_data',
+                        point.isCentroRaccolta ? 1 : 0,
+                        point.kitId || '', point.quantita || 1
+                    ]
+                );
+            }
+
+            updateFillLevel(id, fillLevel) {
+                if (!this.ready) return;
+                this.db.run(
+                    'UPDATE waste_points SET fill_level = ? WHERE id = ?',
+                    [fillLevel, id]
+                );
+            }
+
+            updateStatus(id, status, fillLevel) {
+                if (!this.ready) return;
+                this.db.run(
+                    'UPDATE waste_points SET status = ?, fill_level = ? WHERE id = ?',
+                    [status, fillLevel, id]
+                );
+            }
+
+            saveReport(pointId, issue) {
+                if (!this.ready) return;
+                this.db.run(
+                    'INSERT INTO reports (point_id, issue, timestamp) VALUES (?,?,?)',
+                    [pointId, issue, new Date().toISOString()]
+                );
+            }
+
+            saveIoTReading(noise, crowd, traffic) {
+                if (!this.ready) return;
+                this.db.run(
+                    'INSERT INTO iot_readings (noise_level, crowd_level, traffic_level, timestamp) VALUES (?,?,?,?)',
+                    [noise, crowd, traffic, new Date().toISOString()]
+                );
+            }
+
+            saveRoute(truckId, routeData, distance) {
+                if (!this.ready) return;
+                this.db.run(
+                    'INSERT INTO routes (truck_id, route_data, distance, timestamp) VALUES (?,?,?,?)',
+                    [truckId, JSON.stringify(routeData), distance, new Date().toISOString()]
+                );
+            }
+
+            getStats() {
+                if (!this.ready) return {};
+                const total = this.db.exec('SELECT COUNT(*) as n FROM waste_points')[0]?.values[0][0] || 0;
+                const reports = this.db.exec('SELECT COUNT(*) as n FROM reports')[0]?.values[0][0] || 0;
+                const routes = this.db.exec('SELECT COUNT(*) as n FROM routes')[0]?.values[0][0] || 0;
+                return { total, reports, routes };
+            }
+        }
+
         class FirebaseSmartWasteDashboard {
             constructor() {
                 this.map = null;
@@ -754,8 +893,9 @@
                 this.firebaseConnected = false;
                 this.firebaseUpdates = 0;
                 this.iotSensors = 0;
-                
-                // Firebase Configuration (Demo - sostituisci con i tuoi dati)
+                this.localDB = null; // SQLite locale
+
+                // Firebase config mantenuto per retrocompatibilità ma non usato
                 this.firebaseConfig = {
                     apiKey: "demo-api-key",
                     authDomain: "catania-smart-waste.firebaseapp.com",
@@ -780,23 +920,27 @@
                 this.eventsData = [];
                 
                 this.initMap();
-                this.initFirebase();
-                this.generateStaticData(); // Dati statici di base
+                this.initLocalDatabase(); // Inizializza SQLite e carica dati reali
                 this.initEventListeners();
                 this.startExternalAPIs();
                 this.startRealTimeUpdates();
             }
 
-            initFirebase() {
-                console.log('Firebase disabilitato, avvio diretto in modalità Demo.');
-                this.firebaseConnected = false;
-                this.updateFirebaseStatus();
-                this.showNotification('✅ Modalità Demo attiva con dati simulati', 'info');
-                
-                // Attiva immediatamente la modalità fallback
-                setTimeout(() => {
-                    this.activateFallbackMode();
-                }, 500);
+            async initLocalDatabase() {
+                try {
+                    this.localDB = new LocalDatabase();
+                    await this.localDB.init();
+                    this.updateFirebaseStatus(true);
+                    this.showNotification('✅ Database SQLite locale pronto', 'info');
+                } catch (err) {
+                    console.warn('SQLite non disponibile, proseguo senza persistenza:', err);
+                    this.updateFirebaseStatus(false);
+                }
+                // Carica dati reali indipendentemente dalla disponibilità di SQLite
+                await this.loadRealDataFromJSON();
+                // Avvia simulazione IoT e camion
+                this.setupFallbackListeners();
+                this.startFallbackSimulation();
             }
 
             
@@ -930,7 +1074,7 @@
             
  
             setupFallbackListeners() {
-                // Simula aggiornamenti sensori IoT
+                // Simula aggiornamenti sensori IoT (dati reali non disponibili via Excel)
                 setInterval(() => {
                     const mockSensorData = {
                         noiseLevel: Math.floor(Math.random() * 30) + 40,
@@ -939,7 +1083,14 @@
                         timestamp: new Date().toISOString()
                     };
                     this.updateIoTSensors(mockSensorData);
-                    
+                    // Salva lettura IoT nel DB locale
+                    if (this.localDB && this.localDB.ready) {
+                        this.localDB.saveIoTReading(
+                            mockSensorData.noiseLevel,
+                            mockSensorData.crowdLevel,
+                            mockSensorData.trafficLevel
+                        );
+                    }
                     this.firebaseUpdates++;
                     document.getElementById('firebase-updates').textContent = this.firebaseUpdates;
                 }, 8000);
@@ -1023,15 +1174,22 @@
             }
             
     
-            updateFirebaseStatus() {
+            updateFirebaseStatus(connected) {
                 const statusElement = document.getElementById('firebase-status');
                 const textElement = document.getElementById('firebase-text');
                 const connectionIndicator = document.getElementById('connection-indicator');
-            
-                statusElement.className = 'firebase-status firebase-offline';
-                textElement.textContent = 'Modalità Demo';
-                connectionIndicator.className = 'connection-status status-offline';
-                connectionIndicator.innerHTML = '<i class="fas fa-database"></i><span>Demo Mode</span>';
+
+                if (connected) {
+                    statusElement.className = 'firebase-status firebase-online';
+                    textElement.textContent = 'SQLite Locale';
+                    connectionIndicator.className = 'connection-status status-online';
+                    connectionIndicator.innerHTML = '<i class="fas fa-database"></i><span>SQLite Locale</span>';
+                } else {
+                    statusElement.className = 'firebase-status firebase-offline';
+                    textElement.textContent = 'Solo Memoria';
+                    connectionIndicator.className = 'connection-status status-offline';
+                    connectionIndicator.innerHTML = '<i class="fas fa-database"></i><span>Solo Memoria</span>';
+                }
             }
 
 
@@ -1140,7 +1298,7 @@
                 });
                 
                 this.updateTrucksList();
-                this.showNotification('Flotta sincronizzata da Firebase', 'firebase');
+                this.showNotification('Flotta sincronizzata', 'info');
             }
 
             updateWastePointsFromFirebase(pointsData) {
@@ -1370,17 +1528,15 @@
                 this.map = L.map('map').setView([37.5079, 15.0830], 13);
                 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap | Smart Waste Catania Firebase'
+                    attribution: '© OpenStreetMap | Smart Waste Catania - SQLite Locale'
                 }).addTo(this.map);
 
                 this.map.getContainer().style.filter = 'hue-rotate(5deg) saturate(1.1) contrast(1.05)';
             }
 
-            generateStaticData() {
-                 // Forza sempre dati fallback per test
-                this.generateCompleteFallbackData();
-                // Usa i dati reali dai file Excel
-               // this.loadRealDataFromExcel();
+            async generateStaticData() {
+                // Metodo mantenuto per retrocompatibilità - usa loadRealDataFromJSON()
+                await this.loadRealDataFromJSON();
             }
 
             async loadRealDataFromExcel() {
@@ -1404,7 +1560,7 @@
                     this.updateStats();
                     this.updateTrucksList();
                     
-                    this.showNotification(`📊 Dati reali caricati: ${this.wastePoints.length} punti di raccolta`, 'firebase');
+                    this.showNotification(`📊 Dati reali caricati: ${this.wastePoints.length} punti di raccolta`, 'info');
                     
                 } catch (error) {
                     console.error('Errore caricamento dati Excel:', error);
@@ -1523,6 +1679,98 @@
                 if (name.includes('CAIROLI')) return 'Cairoli';
                 if (name.includes('BORGO')) return 'Borgo-Sanzio';
                 return 'Centro';
+            }
+
+            // Carica dati reali dai file JSON (generati dai file Excel del Comune di Catania)
+            async loadRealDataFromJSON() {
+                try {
+                    console.log('Caricamento dati reali da JSON (fonte: Excel comunale Catania)...');
+
+                    // 1. Centri di raccolta
+                    const centersRes = await fetch('data/collection_centers.json');
+                    if (!centersRes.ok) throw new Error('collection_centers.json non trovato');
+                    const centers = await centersRes.json();
+
+                    centers.forEach((centro, index) => {
+                        const point = {
+                            id: `centro_${index}`,
+                            lat: centro.lat,
+                            lng: centro.lng,
+                            type: 'centro_raccolta',
+                            name: centro.name,
+                            address: centro.address,
+                            fillLevel: 0,
+                            fillRate: 0,
+                            lastCollection: new Date(),
+                            zone: this.extractZoneFromName(centro.name),
+                            priority: 'normal',
+                            status: 'active',
+                            gravitationalPull: 0.5,
+                            resetTimer: 9999,
+                            density: 'alta',
+                            source: 'excel_data',
+                            isCentroRaccolta: true
+                        };
+                        this.wastePoints.push(point);
+                        if (this.localDB && this.localDB.ready) {
+                            this.localDB.insertWastePoint(point);
+                        }
+                    });
+
+                    // 2. Punti utenza
+                    const pointsRes = await fetch('data/waste_points.json');
+                    if (!pointsRes.ok) throw new Error('waste_points.json non trovato');
+                    const points = await pointsRes.json();
+
+                    points.forEach((punto) => {
+                        const mainType = punto.types[0];
+                        const wastePoint = {
+                            id: punto.id,
+                            lat: punto.lat,
+                            lng: punto.lng,
+                            type: mainType,
+                            originalTypes: punto.types,
+                            fillLevel: Math.floor(Math.random() * 80) + 10,
+                            fillRate: this.calculateFillRateByCategory(punto.categoria),
+                            lastCollection: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
+                            zone: punto.zona || 'Non specificata',
+                            priority: this.calculatePriorityByCategory(punto.categoria),
+                            status: 'active',
+                            gravitationalPull: this.calculateGravityByCategory(punto.categoria),
+                            resetTimer: 180 + Math.random() * 120,
+                            density: this.calculateDensityByZone(punto.zona),
+                            source: 'excel_data',
+                            address: punto.address,
+                            categoria: punto.categoria,
+                            kitId: punto.kitId,
+                            quantita: punto.quantita
+                        };
+                        this.wastePoints.push(wastePoint);
+                        if (this.localDB && this.localDB.ready) {
+                            this.localDB.insertWastePoint(wastePoint);
+                        }
+                    });
+
+                    // 3. Genera flotta basata sui dati reali
+                    this.generateRealTruckFleet();
+
+                    this.renderWastePoints();
+                    this.renderTrucks();
+                    this.updateStats();
+                    this.updateTrucksList();
+
+                    const totalReal = this.wastePoints.filter(p => p.source === 'excel_data').length;
+                    this.showNotification(
+                        `📊 ${totalReal} punti reali Catania caricati da database comunale`,
+                        'info'
+                    );
+                    console.log(`Caricati ${this.wastePoints.length} punti reali + ${centers.length} centri di raccolta`);
+
+                } catch (error) {
+                    console.error('Errore caricamento dati JSON:', error);
+                    this.showNotification('⚠️ Dati JSON non disponibili, uso dati dimostrativi', 'error');
+                    this.generateCompleteFallbackData();
+                }
             }
 
             calculateFillRateByCategory(categoria) {
@@ -1716,7 +1964,7 @@
 
                 const sourceText = point.source === 'manual_report' ? '📱 Segnalazione Cittadino' : 
                                   point.source === 'excel_data' ? '📊 Dati Reali Excel' :
-                                  point.source === 'fallback' ? '🔄 Dati Simulati' : '🔥 Firebase';
+                                  point.source === 'fallback' ? '🔄 Dati Simulati' : '🗄️ DB Locale';
 
                 let popupContent;
                 
@@ -2043,7 +2291,7 @@
                                 <p><strong>Tempo stimato:</strong> ${segmentInfo.duration.toFixed(1)} min</p>
                             ` : ''}
                             <p><strong>Riempimento:</strong> ${point.fillLevel.toFixed(1)}%</p>
-                            <p><strong>Fonte dati:</strong> ${point.source === 'excel_data' ? '📊 Excel' : '🔥 Firebase'}</p>
+                            <p><strong>Fonte dati:</strong> ${point.source === 'excel_data' ? '📊 Excel' : '🗄️ DB Locale'}</p>
                         </div>
                     `);
                     
@@ -2142,7 +2390,7 @@
                 });
 
                 const sourceText = point.source === 'manual_report' ? '📱 Segnalazione Cittadino' : 
-                                  point.source === 'static' ? '🗂️ Database Statico' : '🔥 Firebase';
+                                  point.source === 'static' ? '🗂️ Database Statico' : '🗄️ DB Locale';
 
                 const popupContent = `
                     <div style="padding: 12px; min-width: 220px;">
@@ -2177,7 +2425,7 @@
                     const statusColor = truck.status === 'active' ? '#4CAF50' : 
                                        truck.status === 'loading' ? '#FF9800' : '#f44336';
                     
-                    const syncIcon = truck.firebaseSync ? '🔥' : '';
+                    const syncIcon = '';
                     const truckIcon = truck.pacmanMode ? '🟡' : '🚛';
 
                     const icon = L.divIcon({
@@ -2204,7 +2452,7 @@
 
                     const marker = L.marker([truck.lat, truck.lng], { icon }).addTo(this.map);
                     
-                    const syncStatus = truck.firebaseSync ? '🔥 Sincronizzato Firebase' : '⏳ Solo locale';
+                    const syncStatus = '🗄️ DB Locale';
                     
                     const popupContent = `
                         <div style="padding: 15px; min-width: 250px;">
@@ -2271,7 +2519,7 @@
                 // Salva percorso su Firebase (simulato)
                 this.saveRouteToFirebase(truck, dijkstraResult);
                 
-                this.showNotification(`🧮 Dijkstra attivo per ${truckId}: ${dijkstraResult.route.length} punti, ${dijkstraResult.totalDistance.toFixed(2)}km`, 'firebase');
+                this.showNotification(`🧮 Dijkstra attivo per ${truckId}: ${dijkstraResult.route.length} punti, ${dijkstraResult.totalDistance.toFixed(2)}km`, 'info');
             }
 
             calculateDijkstra(startPoint, targetPoints) {
@@ -2424,7 +2672,7 @@
                         // Aggiorna Firebase
                         this.updateTruckInFirebase(truck);
                         
-                        this.showNotification(`✅ ${truck.id} completato! Raccolti ${totalCollected.toFixed(1)}% rifiuti`, 'firebase');
+                        this.showNotification(`✅ ${truck.id} completato! Raccolti ${totalCollected.toFixed(1)}% rifiuti`, 'info');
                         return;
                     }
 
@@ -2483,26 +2731,30 @@
             }
 
             saveRouteToFirebase(truck, routeData) {
-                // Simula salvataggio su Firebase
-                console.log(`Salvando percorso ${truck.id} su Firebase:`, routeData);
-                
+                // Salva percorso nel database SQLite locale
+                if (this.localDB && this.localDB.ready) {
+                    this.localDB.saveRoute(truck.id, routeData, routeData.totalDistance || 0);
+                }
+                console.log(`Percorso ${truck.id} salvato nel DB locale`);
                 setTimeout(() => {
-                    this.showNotification(`💾 Percorso ${truck.id} salvato su Firebase`, 'firebase');
+                    this.showNotification(`💾 Percorso ${truck.id} salvato nel DB locale`, 'info');
                 }, 1000);
             }
 
             updateTruckInFirebase(truck) {
-                // Simula aggiornamento camion su Firebase
+                // Aggiorna stato camion in memoria (persistenza via SQLite non necessaria per le posizioni live)
                 truck.lastUpdate = new Date();
-                truck.firebaseSync = true;
-                
-                console.log(`Aggiornamento camion ${truck.id} su Firebase`);
+                truck.firebaseSync = false;
+                console.log(`Aggiornamento camion ${truck.id}`);
             }
 
             updatePointInFirebase(point) {
-                // Simula aggiornamento punto su Firebase
+                // Aggiorna livello riempimento nel DB SQLite locale
+                if (this.localDB && this.localDB.ready) {
+                    this.localDB.updateStatus(point.id, point.status, point.fillLevel);
+                }
                 point.lastSync = new Date().toISOString();
-                console.log(`Aggiornamento punto ${point.id} su Firebase`);
+                console.log(`Aggiornamento punto ${point.id} nel DB locale`);
             }
 
             calculateDistance(point1, point2) {
@@ -2562,8 +2814,12 @@
                         break;
                 }
                 
-                // Aggiorna Firebase
+                // Aggiorna DB locale e marker
                 this.updatePointInFirebase(point);
+                // Salva segnalazione nel DB SQLite
+                if (this.localDB && this.localDB.ready) {
+                    this.localDB.saveReport(point.id, status);
+                }
                 
                 // Aggiorna marker
                 if (point.marker) {
@@ -2588,7 +2844,7 @@
 
                 this.trucks.forEach(truck => {
                     const card = document.createElement('div');
-                    card.className = `truck-card ${truck.firebaseSync ? 'firebase-synced' : ''}`;
+                    card.className = `truck-card`;
                     
                     const statusClass = truck.status === 'active' ? 'status-active' : 
                                        truck.status === 'loading' ? 'status-loading' : 'status-maintenance';
@@ -2596,7 +2852,7 @@
                     const statusText = truck.status === 'active' ? '🟢 Online' : 
                                       truck.status === 'loading' ? '🟡 Carico' : '🔴 Stop';
 
-                    const syncIcon = truck.firebaseSync ? '🔥' : '⏳';
+                    const syncIcon = '🗄️';
 
                     card.innerHTML = `
                         <div class="truck-header">
@@ -2609,7 +2865,7 @@
                             <div class="progress-fill" style="width: ${truck.currentLoad}%"></div>
                         </div>
                         <div class="truck-info">🎯 Tipo: ${truck.targetType}</div>
-                        <div class="truck-info">${syncIcon} ${truck.firebaseSync ? 'Firebase Sync' : 'Solo Locale'}</div>
+                        <div class="truck-info">${syncIcon} DB Locale</div>
                         <button class="route-btn" onclick="dashboard.calculateDijkstraRoute('${truck.id}')" 
                                 ${truck.status !== 'active' || truck.isOnRoute ? 'disabled' : ''}>
                             ${truck.isOnRoute ? '🎮 Dijkstra Attivo' : truck.status === 'active' ? '🧮 Avvia Dijkstra' : '⚠️ Non Disponibile'}
@@ -2691,7 +2947,7 @@
                     
                     if (urgentPoints.length > 2 && availableTrucks.length > 0 && Math.random() < 0.3) {
                         const selectedTruck = availableTrucks[Math.floor(Math.random() * availableTrucks.length)];
-                        this.showNotification(`🤖 Auto-dispatch intelligente per emergenze`, 'firebase');
+                        this.showNotification(`🤖 Auto-dispatch intelligente per emergenze`, 'info');
                         
                         setTimeout(() => {
                             this.calculateDijkstraRoute(selectedTruck.id);
@@ -2723,7 +2979,7 @@
                 
                 const titles = {
                     'info': 'Sistema Smart',
-                    'firebase': 'Firebase Realtime',
+                    'firebase': 'DB Locale',
                     'iot': 'Sensori IoT',
                     'weather': 'Meteo Alert',
                     'error': 'Errore Sistema',
@@ -2794,7 +3050,7 @@
                     const coverage = ((realDataPoints / totalPoints) * 100).toFixed(1);
                     
                     if (Math.random() < 0.3) {
-                        dashboard.showNotification(`📊 Copertura dati reali: ${coverage}% (${realDataPoints}/${totalPoints} punti)`, 'firebase');
+                        dashboard.showNotification(`📊 Copertura dati reali: ${coverage}% (${realDataPoints}/${totalPoints} punti)`, 'info');
                     }
                 }
             }, 240000); // Ogni 4 minuti
@@ -2810,7 +3066,7 @@
                     
                     if (activeTrucks.length > 0 && Math.random() < 0.4) {
                         const selectedTruck = activeTrucks[0];
-                        dashboard.showNotification(`🤖 Auto-ottimizzazione: dispatch ${selectedTruck.id} per ${excelPoints.length} punti critici`, 'firebase');
+                        dashboard.showNotification(`🤖 Auto-ottimizzazione: dispatch ${selectedTruck.id} per ${excelPoints.length} punti critici`, 'info');
                         
                         setTimeout(() => {
                             dashboard.calculateDijkstraRoute(selectedTruck.id);
@@ -2827,7 +3083,7 @@
             setTimeout(() => {
                 const totalReal = dashboard.wastePoints.filter(p => p.source === 'excel_data').length;
                 const totalCentri = dashboard.wastePoints.filter(p => p.isCentroRaccolta).length;
-                dashboard.showNotification(`📊 Caricati ${totalReal} punti reali + ${totalCentri} centri di raccolta da Excel`, 'firebase');
+                dashboard.showNotification(`📊 Caricati ${totalReal} punti reali + ${totalCentri} centri di raccolta da Excel`, 'info');
             }, 8000);
         });
 
@@ -2875,8 +3131,11 @@
             console.log('Centri di raccolta:', dashboard.wastePoints.filter(p => p.isCentroRaccolta).length);
             console.log('Camion attivi:', dashboard.trucks.filter(t => t.status === 'active').length);
             console.log('Percorsi attivi:', dashboard.currentRoutes.size);
-            console.log('Firebase connesso:', dashboard.firebaseConnected);
-            console.log('Updates Firebase:', dashboard.firebaseUpdates);
+            console.log('SQLite pronto:', dashboard.localDB && dashboard.localDB.ready);
+            if (dashboard.localDB && dashboard.localDB.ready) {
+                console.log('SQLite stats:', dashboard.localDB.getStats());
+            }
+            console.log('Aggiornamenti IoT:', dashboard.firebaseUpdates);
             
             // Distribuzione per zona
             const zoneDistribution = {};
