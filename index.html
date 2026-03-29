@@ -1534,9 +1534,9 @@
                 this.map.getContainer().style.filter = 'hue-rotate(5deg) saturate(1.1) contrast(1.05)';
             }
 
-            generateStaticData() {
+            async generateStaticData() {
                 // Metodo mantenuto per retrocompatibilità - usa loadRealDataFromJSON()
-                this.loadRealDataFromJSON();
+                await this.loadRealDataFromJSON();
             }
 
             async loadRealDataFromExcel() {
@@ -1726,8 +1726,8 @@
                         const mainType = punto.types[0];
                         const wastePoint = {
                             id: punto.id,
-                            lat: punto.lat + (Math.random() - 0.5) * 0.0008,
-                            lng: punto.lng + (Math.random() - 0.5) * 0.0008,
+                            lat: punto.lat,
+                            lng: punto.lng,
                             type: mainType,
                             originalTypes: punto.types,
                             fillLevel: Math.floor(Math.random() * 80) + 10,
@@ -1735,7 +1735,7 @@
                             lastCollection: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
                             zone: punto.zona || 'Non specificata',
                             priority: this.calculatePriorityByCategory(punto.categoria),
-                            status: Math.random() > 0.95 ? 'broken' : 'active',
+                            status: 'active',
                             gravitationalPull: this.calculateGravityByCategory(punto.categoria),
                             resetTimer: 180 + Math.random() * 120,
                             density: this.calculateDensityByZone(punto.zona),
@@ -2425,7 +2425,7 @@
                     const statusColor = truck.status === 'active' ? '#4CAF50' : 
                                        truck.status === 'loading' ? '#FF9800' : '#f44336';
                     
-                    const syncIcon = truck.firebaseSync ? '🔥' : '';
+                    const syncIcon = '';
                     const truckIcon = truck.pacmanMode ? '🟡' : '🚛';
 
                     const icon = L.divIcon({
@@ -2452,7 +2452,7 @@
 
                     const marker = L.marker([truck.lat, truck.lng], { icon }).addTo(this.map);
                     
-                    const syncStatus = truck.firebaseSync ? '🔥 Sincronizzato Firebase' : '⏳ Solo locale';
+                    const syncStatus = '🗄️ DB Locale';
                     
                     const popupContent = `
                         <div style="padding: 15px; min-width: 250px;">
@@ -2844,7 +2844,7 @@
 
                 this.trucks.forEach(truck => {
                     const card = document.createElement('div');
-                    card.className = `truck-card ${truck.firebaseSync ? 'firebase-synced' : ''}`;
+                    card.className = `truck-card`;
                     
                     const statusClass = truck.status === 'active' ? 'status-active' : 
                                        truck.status === 'loading' ? 'status-loading' : 'status-maintenance';
