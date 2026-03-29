@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Centro Comunale di Raccolta PICANELLO",
+    "address": "Via Galatioto-Via Maria Gianni",
+    "lat": 37.52895,
+    "lng": 15.10173
+  },
+  {
+    "name": "Centro Comunale di Raccolta CAIROLI",
+    "address": "Via Fratelli Cairoli 14",
+    "lat": 37.50553,
+    "lng": 15.06684
+  },
+  {
+    "name": "Centro Comunale di Raccolta BORGO-SANZIO",
+    "address": "N/A",
+    "lat": 37.5248,
+    "lng": 15.09362
+  }
+]
