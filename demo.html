@@ -344,6 +344,44 @@
             transform: scale(1.05);
         }
 
+        .grid-control-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .grid-select,
+        .grid-toggle {
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .grid-status {
+            font-size: 0.85em;
+            padding: 8px 10px;
+            background: rgba(102, 126, 234, 0.08);
+            border-radius: 10px;
+            border: 1px dashed rgba(102, 126, 234, 0.4);
+            color: #444;
+        }
+
+        .grid-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.04);
+            font-weight: 600;
+            color: #555;
+        }
+
         .notification {
             position: fixed;
             top: 20px;
@@ -679,6 +717,27 @@
                     <button class="filter-btn" data-type="indifferenziato">⚫</button>
                 </div>
             </div>
+
+            <!-- Grid-based demo controls -->
+            <div class="control-panel">
+                <div class="control-title">
+                    <i class="fas fa-border-all"></i> Demo Granulare (anti-sovraccarico)
+                </div>
+                <div class="grid-control-row">
+                    <select id="grid-size-select" class="grid-select">
+                        <option value="500">Griglia 500m</option>
+                        <option value="1000" selected>Griglia 1km</option>
+                        <option value="2000">Griglia 2km</option>
+                    </select>
+                    <button id="grid-toggle" class="grid-toggle">Mostra griglia</button>
+                </div>
+                <div class="grid-control-row">
+                    <div class="grid-status">
+                        Cella attiva: <span id="grid-active-cell" class="grid-badge">auto</span>
+                        <div style="font-size: 0.8em; margin-top: 6px;">Clicca una cella per caricare solo quei punti e calcolare i percorsi in modo leggero.</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="main-content">
@@ -918,6 +977,14 @@
                 this.weatherData = null;
                 this.trafficData = [];
                 this.eventsData = [];
+                this.allWastePoints = [];
+                this.dataBounds = null;
+                this.gridSizeMeters = 1000;
+                this.gridEnabled = true;
+                this.gridLayer = null;
+                this.activeCellLayer = null;
+                this.activeGridBounds = null;
+                this.handleGridClick = this.handleGridClick.bind(this);
                 
                 this.initMap();
                 this.initLocalDatabase(); // Inizializza SQLite e carica dati reali
@@ -1534,6 +1601,160 @@
                 this.map.getContainer().style.filter = 'hue-rotate(5deg) saturate(1.1) contrast(1.05)';
             }
 
+            calculateBounds(points) {
+                if (!points || points.length === 0) return null;
+                return points.reduce((acc, p) => ({
+                    minLat: Math.min(acc.minLat, p.lat),
+                    maxLat: Math.max(acc.maxLat, p.lat),
+                    minLng: Math.min(acc.minLng, p.lng),
+                    maxLng: Math.max(acc.maxLng, p.lng)
+                }), {
+                    minLat: Infinity,
+                    maxLat: -Infinity,
+                    minLng: Infinity,
+                    maxLng: -Infinity
+                });
+            }
+
+            metersToDegrees(sizeMeters, latitude) {
+                const metersPerDegreeLat = 111320;
+                const metersPerDegreeLng = 111320 * Math.cos(latitude * Math.PI / 180);
+                return {
+                    latDelta: sizeMeters / metersPerDegreeLat,
+                    lngDelta: sizeMeters / metersPerDegreeLng
+                };
+            }
+
+            getGridCellBounds(lat, lng) {
+                if (!this.dataBounds) return null;
+                const deltas = this.metersToDegrees(this.gridSizeMeters, lat);
+                const row = Math.floor((lat - this.dataBounds.minLat) / deltas.latDelta);
+                const col = Math.floor((lng - this.dataBounds.minLng) / deltas.lngDelta);
+                const minLat = this.dataBounds.minLat + row * deltas.latDelta;
+                const maxLat = minLat + deltas.latDelta;
+                const minLng = this.dataBounds.minLng + col * deltas.lngDelta;
+                const maxLng = minLng + deltas.lngDelta;
+                return { row, col, bounds: { minLat, maxLat, minLng, maxLng } };
+            }
+
+            updateGridOverlay() {
+                if (!this.gridEnabled || !this.dataBounds || !this.map) return;
+                const { latDelta, lngDelta } = this.metersToDegrees(this.gridSizeMeters, this.map.getCenter().lat);
+                
+                if (this.gridLayer) {
+                    this.map.removeLayer(this.gridLayer);
+                }
+                this.gridLayer = L.layerGroup();
+                
+                for (let lat = this.dataBounds.minLat; lat <= this.dataBounds.maxLat + 1e-9; lat += latDelta) {
+                    L.polyline([[lat, this.dataBounds.minLng], [lat, this.dataBounds.maxLng]], {
+                        color: '#667eea',
+                        weight: 1,
+                        opacity: 0.35
+                    }).addTo(this.gridLayer);
+                }
+                
+                for (let lng = this.dataBounds.minLng; lng <= this.dataBounds.maxLng + 1e-9; lng += lngDelta) {
+                    L.polyline([[this.dataBounds.minLat, lng], [this.dataBounds.maxLat, lng]], {
+                        color: '#667eea',
+                        weight: 1,
+                        opacity: 0.35
+                    }).addTo(this.gridLayer);
+                }
+                
+                this.gridLayer.addTo(this.map);
+            }
+
+            highlightActiveCell(bounds) {
+                if (this.activeCellLayer) {
+                    this.map.removeLayer(this.activeCellLayer);
+                }
+                if (!bounds || !this.map) return;
+                
+                this.activeCellLayer = L.rectangle(
+                    [[bounds.minLat, bounds.minLng], [bounds.maxLat, bounds.maxLng]],
+                    {
+                        color: '#667eea',
+                        weight: 2,
+                        dashArray: '6,4',
+                        fillOpacity: 0.05
+                    }
+                ).addTo(this.map);
+            }
+
+            updateGridControlsUI(cell) {
+                const badge = document.getElementById('grid-active-cell');
+                if (!badge) return;
+                if (!cell) {
+                    badge.textContent = 'tutti';
+                    return;
+                }
+                badge.textContent = `r${cell.row} • c${cell.col}`;
+            }
+
+            initializeGridFiltering() {
+                if (!this.dataBounds) return;
+                this.updateGridOverlay();
+                const center = this.map ? this.map.getCenter() : { lat: this.dataBounds.minLat, lng: this.dataBounds.minLng };
+                const cell = this.getGridCellBounds(center.lat, center.lng);
+                this.activeGridBounds = cell ? cell.bounds : null;
+                this.highlightActiveCell(this.activeGridBounds);
+                this.updateGridControlsUI(cell);
+                const btn = document.getElementById('grid-toggle');
+                if (btn && this.gridEnabled) {
+                    btn.textContent = 'Nascondi griglia';
+                }
+            }
+
+            filterPointsByGrid(points) {
+                if (!this.gridEnabled || !this.activeGridBounds) return points;
+                const { minLat, maxLat, minLng, maxLng } = this.activeGridBounds;
+                return points.filter(p => p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng);
+            }
+
+            handleGridClick(e) {
+                if (!this.gridEnabled || !this.dataBounds) return;
+                const cell = this.getGridCellBounds(e.latlng.lat, e.latlng.lng);
+                if (cell) {
+                    this.activeGridBounds = cell.bounds;
+                    this.highlightActiveCell(this.activeGridBounds);
+                    this.updateGridControlsUI(cell);
+                    this.renderWastePoints();
+                    this.renderTrucks();
+                    this.showNotification('✅ Griglia selezionata: carico solo i punti di questa cella', 'info');
+                }
+            }
+
+            setGridSize(sizeMeters) {
+                this.gridSizeMeters = sizeMeters;
+                if (this.gridEnabled) {
+                    this.updateGridOverlay();
+                    this.initializeGridFiltering();
+                    this.renderWastePoints();
+                    this.renderTrucks();
+                }
+            }
+
+            toggleGridOverlay() {
+                this.gridEnabled = !this.gridEnabled;
+                const btn = document.getElementById('grid-toggle');
+                if (this.gridEnabled) {
+                    if (btn) btn.textContent = 'Nascondi griglia';
+                    this.updateGridOverlay();
+                    this.initializeGridFiltering();
+                } else {
+                    if (btn) btn.textContent = 'Mostra griglia';
+                    if (this.gridLayer) this.map.removeLayer(this.gridLayer);
+                    if (this.activeCellLayer) this.map.removeLayer(this.activeCellLayer);
+                    this.gridLayer = null;
+                    this.activeCellLayer = null;
+                    this.activeGridBounds = null;
+                    this.updateGridControlsUI(null);
+                    this.renderWastePoints();
+                    this.renderTrucks();
+                }
+            }
+
             async generateStaticData() {
                 // Metodo mantenuto per retrocompatibilità - usa loadRealDataFromJSON()
                 await this.loadRealDataFromJSON();
@@ -1750,6 +1971,10 @@
                             this.localDB.insertWastePoint(wastePoint);
                         }
                     });
+
+                    this.allWastePoints = [...this.wastePoints];
+                    this.dataBounds = this.calculateBounds(this.allWastePoints);
+                    this.initializeGridFiltering();
 
                     // 3. Genera flotta basata sui dati reali
                     this.generateRealTruckFleet();
@@ -2160,7 +2385,8 @@
                 this.showNotification(`🗺️ Calcolo percorso con OpenStreetMap per ${truckId}...`, 'info');
 
                 // Trova punti compatibili
-                const compatiblePoints = this.wastePoints.filter(point => {
+                const scopedPoints = this.filterPointsByGrid(this.wastePoints);
+                const compatiblePoints = scopedPoints.filter(point => {
                     if (point.isCentroRaccolta) return false; // Escludi centri di raccolta dai percorsi
                     if (point.type !== truck.targetType) return false;
                     if (point.status === 'broken') return false;
@@ -2329,7 +2555,9 @@
                     }
                 });
 
-                this.wastePoints.forEach(point => {
+                const pointsToRender = this.filterPointsByGrid(this.wastePoints);
+
+                pointsToRender.forEach(point => {
                     if (this.activeFilter !== 'all' && point.type !== this.activeFilter) {
                         return;
                     }
@@ -2894,6 +3122,25 @@
                         this.renderTrucks();
                     });
                 });
+
+                const gridSelect = document.getElementById('grid-size-select');
+                if (gridSelect) {
+                    gridSelect.addEventListener('change', (e) => {
+                        const value = Number(e.target.value);
+                        this.setGridSize(value);
+                    });
+                }
+
+                const gridToggle = document.getElementById('grid-toggle');
+                if (gridToggle) {
+                    gridToggle.addEventListener('click', () => {
+                        this.toggleGridOverlay();
+                    });
+                }
+
+                if (this.map) {
+                    this.map.on('click', this.handleGridClick);
+                }
 
                 document.getElementById('report-modal').addEventListener('click', (e) => {
                     if (e.target === e.currentTarget) {
