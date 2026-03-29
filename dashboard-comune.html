@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Comune di Catania — Briller.AI</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
         :root {
@@ -372,7 +372,7 @@
     </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
 (function () {
     'use strict';
@@ -409,7 +409,7 @@
         centers = await ccRes.json();
         simulateFills();
         render();
-        initMap();
+        try { initMap(); } catch(e) { console.warn('Mappa non disponibile:', e); }
     }
 
     function simulateFills() {
@@ -615,7 +615,7 @@
                         <div class="num">${it.oggi}${it.unit}</div>
                         <div class="sub">Oggi</div>
                     </div>
-                    <div class="compare-arrow ${dir}">${arrow} ${Math.abs(diff)}${it.unit}</div>
+                    <div class="compare-arrow ${dir}">${arrow} ${parseFloat(Math.abs(diff).toFixed(1))}${it.unit}</div>
                     <div class="compare-val">
                         <div class="num" style="color:var(--text-light);">${it.ieri}${it.unit}</div>
                         <div class="sub">Ieri</div>

@@ -593,12 +593,12 @@ let truckPositions = FLEET.map(t => ({
    INIT
    ════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
-    initMap();
+    try { initMap(); } catch(e) { console.warn('Mappa non disponibile:', e); }
     initUI();
     await loadData();
     renderFleet();
     renderCameras();
-    renderMapOverlays();
+    if (map) renderMapOverlays();
     updateDetailTable();
     startSimulations();
 });
