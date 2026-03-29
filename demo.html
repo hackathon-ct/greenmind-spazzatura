@@ -11,6 +11,9 @@
     <!-- Firebase SDK -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-app-compat.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-database-compat.min.js"></script>
+
+    <!-- SheetJS per lettura file Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <style>
         * {
@@ -127,6 +130,13 @@
             height: calc(100vh - 70px);
             width: 100%;
             position: relative;
+        }
+
+        .truck-icon,
+        .waste-point-icon {
+            background: transparent !important;
+            border: none !important;
+            overflow: visible !important;
         }
 
         .control-panel {
@@ -1377,65 +1387,77 @@
             }
 
             generateStaticData() {
-                 // Forza sempre dati fallback per test
+                // Genera prima i dati di fallback per mostrare subito qualcosa sulla mappa
                 this.generateCompleteFallbackData();
-                // Usa i dati reali dai file Excel
-               // this.loadRealDataFromExcel();
+                // Poi carica i dati reali dai file Excel (sovrascrive il fallback)
+                this.loadRealDataFromExcel();
             }
 
             async loadRealDataFromExcel() {
                 try {
                     console.log('Caricando dati reali da Excel...');
-                    
-                    // Importa SheetJS
-                    const XLSX = await import('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-                    
+
+                    if (!window.XLSX) {
+                        throw new Error('SheetJS (XLSX) non disponibile');
+                    }
+                    const XLSX = window.XLSX;
+
+                    // Pulisci i dati fallback esistenti
+                    this.wastePoints.forEach(p => { if (p.marker) this.map.removeLayer(p.marker); });
+                    this.trucks.forEach(t => { if (t.marker) this.map.removeLayer(t.marker); });
+                    this.wastePoints = [];
+                    this.trucks = [];
+
                     // 1. Carica Centri di Raccolta
                     await this.loadCentriRaccolta(XLSX);
-                    
+
                     // 2. Carica Punti Utenza
                     await this.loadPuntiUtenza(XLSX);
-                    
+
                     // 3. Genera flotta camion basata sui dati reali
                     this.generateRealTruckFleet();
-                    
+
                     this.renderWastePoints();
                     this.renderTrucks();
                     this.updateStats();
                     this.updateTrucksList();
-                    
+
                     this.showNotification(`📊 Dati reali caricati: ${this.wastePoints.length} punti di raccolta`, 'firebase');
-                    
+
                 } catch (error) {
                     console.error('Errore caricamento dati Excel:', error);
                     this.showNotification('Errore caricamento dati reali, uso dati simulati', 'error');
-                    this.generateCompleteFallbackData();
                 }
             }
 
             async loadCentriRaccolta(XLSX) {
                 try {
-                    const response = await window.fs.readFile('Centri di Raccolta.xlsx');
-                    const workbook = XLSX.read(response);
+                    const response = await fetch('data/Centri di Raccolta.xlsx');
+                    const arrayBuffer = await response.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer);
                     const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                    
+
                     console.log(`Caricati ${data.length} centri di raccolta`);
-                    
+
                     data.forEach((centro, index) => {
+                        const lat = centro['Coordinata X'];
+                        const lng = centro['Coordinata Y'];
+                        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+
                         const point = {
                             id: `centro_${index}`,
-                            lat: centro['Coordinata X'],
-                            lng: centro['Coordinata Y'],
+                            lat: lat,
+                            lng: lng,
                             type: 'centro_raccolta',
                             name: centro['Centro Comunale di Raccolta '],
                             address: centro['Address'],
-                            fillLevel: 0, // I centri non si riempiono
+                            fillLevel: 0,
                             fillRate: 0,
                             lastCollection: new Date(),
                             zone: this.extractZoneFromName(centro['Centro Comunale di Raccolta ']),
                             priority: 'normal',
                             status: 'active',
-                            gravitationalPull: 0.5, // Attrazione bassa per i centri
+                            gravitationalPull: 0.5,
                             resetTimer: 9999,
                             density: 'alta',
                             source: 'excel_data',
@@ -1443,7 +1465,7 @@
                         };
                         this.wastePoints.push(point);
                     });
-                    
+
                 } catch (error) {
                     console.error('Errore caricamento centri raccolta:', error);
                 }
@@ -1451,68 +1473,70 @@
 
             async loadPuntiUtenza(XLSX) {
                 try {
-                    const response = await window.fs.readFile('LottoCentro_Utenza_Kit_UND_2024.xlsx');
-                    const workbook = XLSX.read(response);
+                    const response = await fetch('data/LottoCentro_Utenza_Kit_UND_2024.xlsx');
+                    const arrayBuffer = await response.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer);
                     const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                    
+
                     // Filtra solo record validi con coordinate
-                    const validPoints = data.filter(punto => 
-                        punto.latlong && 
-                        punto.latlong.includes(',') && 
+                    const validPoints = data.filter(punto =>
+                        punto.latlong &&
+                        typeof punto.latlong === 'string' &&
+                        punto.latlong.includes(',') &&
                         punto.latlong !== 'NULL' &&
-                        punto.Rifiuto && 
+                        punto.Rifiuto &&
                         punto.Rifiuto !== '{NULL}' &&
                         !punto.Rifiuto.includes('NULL')
                     );
-                    
+
                     console.log(`Caricati ${validPoints.length} punti utenza validi`);
-                    
+
                     validPoints.forEach((punto, index) => {
                         // Estrai coordinate
                         const [lat, lng] = punto.latlong.split(',').map(coord => parseFloat(coord.trim()));
-                        
+
+                        if (isNaN(lat) || isNaN(lng)) return;
+
                         // Verifica coordinate valide per Catania
                         if (lat < 37.4 || lat > 37.6 || lng < 14.9 || lng > 15.2) {
                             return; // Skip coordinate non valide
                         }
-                        
+
                         // Estrai tipi di rifiuto dalla stringa
                         const rifiutiString = punto.Rifiuto.replace(/[{}]/g, '');
-                        const tipiRifiuto = rifiutiString.split(',').map(r => r.trim().toLowerCase()).filter(r => 
+                        const tipiRifiuto = rifiutiString.split(',').map(r => r.trim().toLowerCase()).filter(r =>
                             ['organico', 'carta', 'plastica', 'vetro', 'indifferenziato'].includes(r)
                         );
-                        
+
                         if (tipiRifiuto.length === 0) return; // Skip se non ci sono rifiuti validi
-                        
-                        // Crea un punto per ogni tipo di rifiuto (simulando contenitori separati)
+
                         const mainType = tipiRifiuto[0]; // Tipo principale
-                        
+
                         const wastePoint = {
                             id: `utenza_${punto.Id}_${index}`,
-                            lat: lat + (Math.random() - 0.5) * 0.0008, // Piccola variazione per evitare sovrapposizioni
+                            lat: lat + (Math.random() - 0.5) * 0.0008,
                             lng: lng + (Math.random() - 0.5) * 0.0008,
                             type: mainType,
-                            originalTypes: tipiRifiuto, // Mantieni tutti i tipi
-                            fillLevel: Math.floor(Math.random() * 80) + 10, // 10-90%
+                            originalTypes: tipiRifiuto,
+                            fillLevel: Math.floor(Math.random() * 80) + 10,
                             fillRate: this.calculateFillRateByCategory(punto.Categoria),
                             lastCollection: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
                             zone: punto.Zona || 'Non specificata',
                             priority: this.calculatePriorityByCategory(punto.Categoria),
-                            status: Math.random() > 0.95 ? 'broken' : 'active', // 5% rotti
+                            status: Math.random() > 0.95 ? 'broken' : 'active',
                             gravitationalPull: this.calculateGravityByCategory(punto.Categoria),
                             resetTimer: 180 + Math.random() * 120,
                             density: this.calculateDensityByZone(punto.Zona),
                             source: 'excel_data',
-                            // Dati originali
                             address: `${punto.Ubicazione} ${punto.Civico || ''}`.trim(),
                             categoria: punto.Categoria,
                             kitId: punto['Kit Id'],
                             quantita: punto['Quantit?'] || 1
                         };
-                        
+
                         this.wastePoints.push(wastePoint);
                     });
-                    
+
                 } catch (error) {
                     console.error('Errore caricamento punti utenza:', error);
                 }
@@ -2087,85 +2111,6 @@
                     }
                     this.renderSingleWastePoint(point);
                 });
-            }
-
-            renderSingleWastePoint(point) {
-                if (this.activeFilter !== 'all' && point.type !== this.activeFilter) {
-                    return;
-                }
-
-                const fillPercent = Math.min(100, Math.max(0, point.fillLevel));
-                const intensity = Math.floor(fillPercent / 10);
-                
-                let statusIcon = '';
-                let extraClass = '';
-                
-                if (point.status === 'broken') {
-                    statusIcon = '⚠️';
-                    extraClass = 'animation: pulse 1s infinite;';
-                } else if (point.status === 'full' || fillPercent >= 100) {
-                    statusIcon = '🔴';
-                    extraClass = 'animation: pulse 1s infinite;';
-                } else if (point.source === 'manual_report') {
-                    statusIcon = '📱';
-                    extraClass = 'animation: pulse 2s infinite;';
-                } else if (fillPercent > 85) {
-                    statusIcon = '🟡';
-                }
-
-                const icon = L.divIcon({
-                    html: `<div style="
-                        background: ${this.wasteColors[point.type]};
-                        width: ${18 + intensity * 2}px;
-                        height: ${18 + intensity * 2}px;
-                        border-radius: 50%;
-                        border: 3px solid white;
-                        box-shadow: 0 3px 12px rgba(0,0,0,0.4);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: white;
-                        font-weight: bold;
-                        font-size: ${9 + intensity}px;
-                        cursor: pointer;
-                        ${extraClass}
-                    " title="Clicca per segnalare stato">${intensity}${statusIcon}</div>`,
-                    className: 'waste-point-icon',
-                    iconSize: [18 + intensity * 2, 18 + intensity * 2],
-                    iconAnchor: [9 + intensity, 9 + intensity]
-                });
-
-                const marker = L.marker([point.lat, point.lng], { icon }).addTo(this.map);
-                
-                marker.on('click', () => {
-                    this.openReportModal(point);
-                });
-
-                const sourceText = point.source === 'manual_report' ? '📱 Segnalazione Cittadino' : 
-                                  point.source === 'static' ? '🗂️ Database Statico' : '🔥 Firebase';
-
-                const popupContent = `
-                    <div style="padding: 12px; min-width: 220px;">
-                        <h4 style="color: ${this.wasteColors[point.type]}; margin-bottom: 8px;">
-                            ${point.type.charAt(0).toUpperCase() + point.type.slice(1)}
-                        </h4>
-                        <p><strong>📍 Zona:</strong> ${point.zone}</p>
-                        <p><strong>📊 Riempimento:</strong> ${fillPercent.toFixed(1)}%</p>
-                        <div style="background: #f0f0f0; border-radius: 10px; height: 8px; margin: 8px 0; overflow: hidden;">
-                            <div style="background: ${this.wasteColors[point.type]}; height: 100%; width: ${Math.min(100, fillPercent)}%; border-radius: 10px; transition: width 0.3s ease;"></div>
-                        </div>
-                        <p><strong>📅 Ultima raccolta:</strong> ${point.lastCollection.toLocaleDateString('it-IT')}</p>
-                        <p><strong>📡 Fonte:</strong> ${sourceText}</p>
-                        ${point.priority === 'high' ? '<p style="color: red;"><strong>🚨 Priorità Alta</strong></p>' : ''}
-                        ${point.status === 'broken' ? '<p style="color: orange;"><strong>⚠️ Contenitore Guasto</strong></p>' : ''}
-                        <div style="margin-top: 12px; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
-                            <small style="color: #667eea;">💡 Clicca per segnalare manualmente</small>
-                        </div>
-                    </div>
-                `;
-                
-                marker.bindPopup(popupContent);
-                point.marker = marker;
             }
 
             renderTrucks() {
