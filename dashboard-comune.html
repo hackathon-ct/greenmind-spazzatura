@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Comune di Catania — Briller.AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        :root {
+            --green-dark: #1a7a4a;
+            --green-mid: #27ae60;
+            --green-light: #2ecc71;
+            --green-pale: #d5f5e3;
+            --red: #e74c3c;
+            --red-pale: #fdecea;
+            --yellow: #f39c12;
+            --yellow-pale: #fef9e7;
+            --blue: #2980b9;
+            --purple: #667eea;
+            --text-dark: #1a1a2e;
+            --text-mid: #4a4a6a;
+            --text-light: #7a7a9a;
+            --white: #ffffff;
+            --bg: #f4f6f9;
+            --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+            --radius: 14px;
+            --radius-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text-dark);
+            line-height: 1.5;
+        }
+
+        /* ── Navbar ──────────────────────────────────────── */
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 28px; height: 60px;
+            background: rgba(255,255,255,0.92);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(26,122,74,0.12);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .nav-brand {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 1.25rem; font-weight: 700; color: var(--green-dark);
+            text-decoration: none;
+        }
+        .nav-brand i { font-size: 1.3rem; }
+        .nav-title {
+            font-size: 0.92rem; color: var(--text-mid);
+            border-left: 1px solid #ccc; padding-left: 14px; margin-left: 6px;
+            white-space: nowrap;
+        }
+        .nav-links { display: flex; align-items: center; gap: 6px; }
+        .nav-links a {
+            text-decoration: none; font-size: 0.82rem; font-weight: 500;
+            padding: 7px 14px; border-radius: 8px; color: var(--text-mid);
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: var(--green-pale); color: var(--green-dark); }
+        .nav-links a.active {
+            background: var(--green-dark); color: var(--white);
+        }
+
+        /* ── Layout ──────────────────────────────────────── */
+        .page { padding: 80px 28px 40px; max-width: 1380px; margin: 0 auto; }
+
+        .page-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+        }
+        .page-header h1 {
+            font-size: 1.55rem; font-weight: 700; color: var(--text-dark);
+        }
+        .page-header h1 i { color: var(--green-mid); margin-right: 6px; }
+        .last-update {
+            font-size: 0.78rem; color: var(--text-light);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .live-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--green-mid);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ── Section Titles ──────────────────────────────── */
+        .section-title {
+            font-size: 1.1rem; font-weight: 700; color: var(--text-dark);
+            margin: 36px 0 16px; display: flex; align-items: center; gap: 8px;
+        }
+        .section-title i { color: var(--green-mid); font-size: 1rem; }
+
+        /* ── KPI Cards ───────────────────────────────────── */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+            gap: 18px;
+        }
+        .kpi-card {
+            background: var(--white); border-radius: var(--radius);
+            padding: 22px 20px; box-shadow: var(--shadow);
+            display: flex; flex-direction: column; gap: 4px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative; overflow: hidden;
+        }
+        .kpi-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+        .kpi-card .icon-circle {
+            width: 42px; height: 42px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem; margin-bottom: 8px;
+        }
+        .kpi-card .value { font-size: 1.8rem; font-weight: 800; color: var(--text-dark); }
+        .kpi-card .label { font-size: 0.78rem; color: var(--text-light); font-weight: 500; }
+        .kpi-card .trend {
+            font-size: 0.72rem; font-weight: 600; margin-top: 4px;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .trend.up { color: var(--green-mid); }
+        .trend.down { color: var(--red); }
+        .ic-green { background: var(--green-pale); color: var(--green-dark); }
+        .ic-blue { background: #dbeafe; color: var(--blue); }
+        .ic-yellow { background: var(--yellow-pale); color: var(--yellow); }
+        .ic-red { background: var(--red-pale); color: var(--red); }
+        .ic-purple { background: #ede9fe; color: var(--purple); }
+
+        /* ── Fill Status Panel ───────────────────────────── */
+        .fill-panel {
+            background: var(--white); border-radius: var(--radius);
+            padding: 24px; box-shadow: var(--shadow);
+        }
+        .fill-bar-container {
+            height: 36px; border-radius: 10px; overflow: hidden;
+            display: flex; margin: 18px 0 14px; background: #eee;
+        }
+        .fill-segment {
+            height: 100%; display: flex; align-items: center; justify-content: center;
+            font-size: 0.72rem; font-weight: 700; color: var(--white);
+            transition: width 0.6s ease;
+        }
+        .fill-legend {
+            display: flex; gap: 28px; flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex; align-items: center; gap: 8px; font-size: 0.82rem;
+        }
+        .legend-dot {
+            width: 14px; height: 14px; border-radius: 4px;
+        }
+        .legend-item .count { font-weight: 700; }
+
+        /* ── Zone Table ──────────────────────────────────── */
+        .table-wrap {
+            background: var(--white); border-radius: var(--radius);
+            box-shadow: var(--shadow); overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            background: var(--green-dark); color: var(--white);
+            padding: 13px 18px; font-size: 0.78rem; font-weight: 600;
+            text-align: left; text-transform: uppercase; letter-spacing: 0.4px;
+        }
+        tbody td {
+            padding: 12px 18px; font-size: 0.84rem; border-bottom: 1px solid #f0f0f0;
+        }
+        tbody tr:hover { background: #f8fdf9; }
+        .badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: 0.72rem; font-weight: 600;
+        }
+        .badge-green { background: var(--green-pale); color: var(--green-dark); }
+        .badge-yellow { background: var(--yellow-pale); color: #b7791f; }
+        .badge-red { background: var(--red-pale); color: var(--red); }
+
+        /* ── Waste Type Cards ────────────────────────────── */
+        .waste-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+        }
+        .waste-card {
+            background: var(--white); border-radius: var(--radius);
+            padding: 20px; box-shadow: var(--shadow);
+            display: flex; align-items: flex-start; gap: 14px;
+            transition: transform 0.2s;
+        }
+        .waste-card:hover { transform: translateY(-2px); }
+        .waste-emoji { font-size: 2rem; line-height: 1; }
+        .waste-info { flex: 1; }
+        .waste-info .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
+        .waste-info .stat { font-size: 0.78rem; color: var(--text-light); }
+        .waste-info .stat strong { color: var(--text-dark); }
+
+        /* ── Comparison Cards ────────────────────────────── */
+        .compare-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+        .compare-card {
+            background: var(--white); border-radius: var(--radius);
+            padding: 20px; box-shadow: var(--shadow);
+        }
+        .compare-card .title {
+            font-size: 0.78rem; font-weight: 600; color: var(--text-light);
+            text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 12px;
+        }
+        .compare-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        .compare-val {
+            text-align: center; flex: 1;
+        }
+        .compare-val .num { font-size: 1.5rem; font-weight: 800; }
+        .compare-val .sub { font-size: 0.7rem; color: var(--text-light); margin-top: 2px; }
+        .compare-arrow {
+            font-size: 1.2rem; font-weight: 800; min-width: 52px; text-align: center;
+        }
+        .compare-arrow.up { color: var(--green-mid); }
+        .compare-arrow.down { color: var(--red); }
+        .compare-arrow.neutral { color: var(--text-light); }
+
+        /* ── Mini Map ────────────────────────────────────── */
+        .map-container {
+            background: var(--white); border-radius: var(--radius);
+            box-shadow: var(--shadow); overflow: hidden;
+        }
+        #minimap { height: 370px; width: 100%; }
+
+        /* ── Alerts ──────────────────────────────────────── */
+        .alerts-list {
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .alert-item {
+            background: var(--white); border-radius: var(--radius-sm);
+            padding: 14px 18px; box-shadow: var(--shadow);
+            display: flex; align-items: flex-start; gap: 12px;
+            border-left: 4px solid transparent;
+        }
+        .alert-item.severity-high { border-left-color: var(--red); }
+        .alert-item.severity-medium { border-left-color: var(--yellow); }
+        .alert-item.severity-low { border-left-color: var(--green-mid); }
+        .alert-icon {
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85rem; flex-shrink: 0;
+        }
+        .alert-icon.high { background: var(--red-pale); color: var(--red); }
+        .alert-icon.medium { background: var(--yellow-pale); color: var(--yellow); }
+        .alert-icon.low { background: var(--green-pale); color: var(--green-dark); }
+        .alert-text { flex: 1; font-size: 0.84rem; color: var(--text-dark); }
+        .alert-time { font-size: 0.7rem; color: var(--text-light); white-space: nowrap; }
+
+        /* Map marker icon */
+        .center-marker {
+            background: var(--green-dark); color: #fff;
+            width: 30px; height: 30px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        /* ── Footer ──────────────────────────────────────── */
+        .footer {
+            text-align: center; padding: 28px 0 18px;
+            font-size: 0.75rem; color: var(--text-light);
+        }
+
+        /* ── Responsive ──────────────────────────────────── */
+        @media (max-width: 768px) {
+            .navbar { padding: 0 14px; }
+            .nav-title { display: none; }
+            .nav-links a { padding: 6px 10px; font-size: 0.75rem; }
+            .page { padding: 72px 14px 30px; }
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .kpi-card .value { font-size: 1.4rem; }
+            .compare-grid { grid-template-columns: 1fr; }
+            .fill-legend { gap: 14px; }
+            #minimap { height: 260px; }
+        }
+        @media (max-width: 480px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Navbar ─────────────────────────────────────────────── -->
+<nav class="navbar">
+    <div style="display:flex;align-items:center;">
+        <a href="index.html" class="nav-brand"><i class="fas fa-leaf"></i> Briller.AI</a>
+        <span class="nav-title">Dashboard Comune di Catania</span>
+    </div>
+    <div class="nav-links">
+        <a href="dashboard-comune.html" class="active"><i class="fas fa-landmark"></i> Dashboard Comune</a>
+        <a href="dashboard-azienda.html"><i class="fas fa-truck"></i> Dashboard Azienda</a>
+        <a href="index.html"><i class="fas fa-home"></i> Home</a>
+        <a href="demo.html"><i class="fas fa-flask"></i> Demo Tecnica</a>
+    </div>
+</nav>
+
+<!-- ─── Page Content ──────────────────────────────────────── -->
+<div class="page">
+
+    <!-- Header -->
+    <div class="page-header">
+        <h1><i class="fas fa-landmark"></i> Panoramica Comune</h1>
+        <div class="last-update">
+            <div class="live-dot"></div>
+            <span id="lastUpdate">Aggiornamento in corso…</span>
+        </div>
+    </div>
+
+    <!-- Section 1: KPI Cards -->
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <!-- Section 2: Situazione Corrente -->
+    <h2 class="section-title"><i class="fas fa-chart-pie"></i> Situazione Corrente</h2>
+    <div class="fill-panel" id="fillPanel">
+        <div style="font-size:0.88rem;color:var(--text-mid);font-weight:600;">Distribuzione livelli di riempimento</div>
+        <div class="fill-bar-container" id="fillBar"></div>
+        <div class="fill-legend" id="fillLegend"></div>
+    </div>
+
+    <!-- Section 3: Riepilogo per Zona -->
+    <h2 class="section-title"><i class="fas fa-map-marked-alt"></i> Riepilogo per Zona</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Zona</th>
+                    <th>Punti Raccolta</th>
+                    <th>Livello Medio</th>
+                    <th>Stato</th>
+                    <th>Ultima Raccolta</th>
+                </tr>
+            </thead>
+            <tbody id="zoneTable"></tbody>
+        </table>
+    </div>
+
+    <!-- Section 4: Riepilogo per Tipo Rifiuto -->
+    <h2 class="section-title"><i class="fas fa-recycle"></i> Riepilogo per Tipo Rifiuto</h2>
+    <div class="waste-grid" id="wasteGrid"></div>
+
+    <!-- Section 5: Confronto Oggi vs Ieri -->
+    <h2 class="section-title"><i class="fas fa-exchange-alt"></i> Confronto Oggi vs Ieri</h2>
+    <div class="compare-grid" id="compareGrid"></div>
+
+    <!-- Section 6: Mini Map -->
+    <h2 class="section-title"><i class="fas fa-map"></i> Mappa Centri e Zone</h2>
+    <div class="map-container">
+        <div id="minimap"></div>
+    </div>
+
+    <!-- Section 7: Avvisi Recenti -->
+    <h2 class="section-title"><i class="fas fa-bell"></i> Avvisi Recenti</h2>
+    <div class="alerts-list" id="alertsList"></div>
+
+    <div class="footer">
+        Briller.AI — Raccolta rifiuti intelligente per la smart city del futuro &middot; Comune di Catania
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    /* ── Helpers ────────────────────────────────────────── */
+    const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const randFloat = (min, max) => +(Math.random() * (max - min) + min).toFixed(1);
+    const pct = v => v.toFixed(1) + '%';
+    const now = () => {
+        const d = new Date();
+        return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })
+            + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    };
+    const timeAgo = mins => {
+        if (mins < 60) return mins + ' min fa';
+        const h = Math.floor(mins / 60);
+        return h + ' or' + (h === 1 ? 'a' : 'e') + ' fa';
+    };
+
+    /* ── State ─────────────────────────────────────────── */
+    let wastePoints = [];
+    let centers = [];
+    let fillLevels = [];     // per-point simulated fill [0-100]
+    let fillLevelsYday = []; // yesterday simulated
+    let map = null;
+
+    /* ── Data Loading ──────────────────────────────────── */
+    async function loadData() {
+        const [wpRes, ccRes] = await Promise.all([
+            fetch('data/waste_points.json'),
+            fetch('data/collection_centers.json')
+        ]);
+        wastePoints = await wpRes.json();
+        centers = await ccRes.json();
+        simulateFills();
+        render();
+        try { initMap(); } catch(e) { console.warn('Mappa non disponibile:', e); }
+    }
+
+    function simulateFills() {
+        fillLevels = wastePoints.map(() => randFloat(5, 98));
+        fillLevelsYday = wastePoints.map(() => randFloat(5, 98));
+    }
+
+    /* ── Render ────────────────────────────────────────── */
+    function render() {
+        document.getElementById('lastUpdate').textContent = 'Ultimo aggiornamento: ' + now();
+        renderKPIs();
+        renderFillPanel();
+        renderZoneTable();
+        renderWasteTypes();
+        renderCompare();
+        renderAlerts();
+    }
+
+    /* ── 1. KPIs ──────────────────────────────────────── */
+    function renderKPIs() {
+        const avgFill = fillLevels.reduce((a, b) => a + b, 0) / fillLevels.length;
+        const avgFillYday = fillLevelsYday.reduce((a, b) => a + b, 0) / fillLevelsYday.length;
+        const fillDelta = avgFill - avgFillYday;
+
+        const reports = rand(12, 35);
+        const reportsYday = rand(12, 35);
+        const collections = rand(85, 120);
+        const collectionsYday = rand(85, 120);
+        const changePct = randFloat(-8, 8);
+
+        const cards = [
+            {
+                icon: 'fas fa-map-pin', iconClass: 'ic-green',
+                value: wastePoints.length.toLocaleString('it-IT'),
+                label: 'Punti di Raccolta Totali',
+                trend: null
+            },
+            {
+                icon: 'fas fa-warehouse', iconClass: 'ic-blue',
+                value: centers.length,
+                label: 'Centri di Raccolta',
+                trend: null
+            },
+            {
+                icon: 'fas fa-battery-half', iconClass: 'ic-yellow',
+                value: pct(avgFill),
+                label: 'Livello Riempimento Medio',
+                trend: { dir: fillDelta >= 0 ? 'up' : 'down', val: Math.abs(fillDelta).toFixed(1) + '%' }
+            },
+            {
+                icon: 'fas fa-flag', iconClass: 'ic-red',
+                value: reports,
+                label: 'Segnalazioni Oggi',
+                trend: { dir: reports >= reportsYday ? 'up' : 'down', val: Math.abs(reports - reportsYday) + ' vs ieri' }
+            },
+            {
+                icon: 'fas fa-check-circle', iconClass: 'ic-green',
+                value: collections,
+                label: 'Raccolte Completate Oggi',
+                trend: { dir: collections >= collectionsYday ? 'up' : 'down', val: Math.abs(collections - collectionsYday) + ' vs ieri' }
+            },
+            {
+                icon: 'fas fa-chart-line', iconClass: 'ic-purple',
+                value: (changePct >= 0 ? '+' : '') + changePct + '%',
+                label: 'Variazione vs Ieri',
+                trend: { dir: changePct >= 0 ? 'up' : 'down', val: 'rispetto a ieri' }
+            }
+        ];
+
+        document.getElementById('kpiGrid').innerHTML = cards.map(c => `
+            <div class="kpi-card">
+                <div class="icon-circle ${c.iconClass}"><i class="${c.icon}"></i></div>
+                <div class="value">${c.value}</div>
+                <div class="label">${c.label}</div>
+                ${c.trend ? `<div class="trend ${c.trend.dir}">
+                    ${c.trend.dir === 'up' ? '↑' : '↓'} ${c.trend.val}
+                </div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    /* ── 2. Fill Status Panel ─────────────────────────── */
+    function renderFillPanel() {
+        const green = fillLevels.filter(v => v <= 30).length;
+        const yellow = fillLevels.filter(v => v > 30 && v <= 70).length;
+        const red = fillLevels.filter(v => v > 70).length;
+        const total = fillLevels.length;
+
+        const gPct = (green / total * 100).toFixed(1);
+        const yPct = (yellow / total * 100).toFixed(1);
+        const rPct = (red / total * 100).toFixed(1);
+
+        document.getElementById('fillBar').innerHTML = `
+            <div class="fill-segment" style="width:${gPct}%;background:var(--green-mid);" title="Verde: ${green}">${gPct}%</div>
+            <div class="fill-segment" style="width:${yPct}%;background:var(--yellow);" title="Giallo: ${yellow}">${yPct}%</div>
+            <div class="fill-segment" style="width:${rPct}%;background:var(--red);" title="Rosso: ${red}">${rPct}%</div>
+        `;
+
+        document.getElementById('fillLegend').innerHTML = `
+            <div class="legend-item"><div class="legend-dot" style="background:var(--green-mid)"></div> Verde (0-30%): <span class="count">${green} punti</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Giallo (30-70%): <span class="count">${yellow} punti</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Rosso (70-100%): <span class="count">${red} punti</span></div>
+        `;
+    }
+
+    /* ── 3. Zone Table ───────────────────────────────── */
+    function renderZoneTable() {
+        const zoneMap = {};
+        wastePoints.forEach((p, i) => {
+            const z = p.zona || 'Altro';
+            if (!zoneMap[z]) zoneMap[z] = { count: 0, fills: [], fillsYday: [] };
+            zoneMap[z].count++;
+            zoneMap[z].fills.push(fillLevels[i]);
+            zoneMap[z].fillsYday.push(fillLevelsYday[i]);
+        });
+
+        const hours = [7, 8, 9, 10, 11, 12, 13, 14];
+
+        const rows = Object.keys(zoneMap).sort().map(z => {
+            const d = zoneMap[z];
+            const avg = d.fills.reduce((a, b) => a + b, 0) / d.fills.length;
+            let badge, stato;
+            if (avg <= 30) { badge = 'badge-green'; stato = 'Regolare'; }
+            else if (avg <= 70) { badge = 'badge-yellow'; stato = 'Attenzione'; }
+            else { badge = 'badge-red'; stato = 'Critico'; }
+            const h = hours[rand(0, hours.length - 1)];
+            const m = rand(0, 59).toString().padStart(2, '0');
+            return `<tr>
+                <td style="font-weight:600;">${z}</td>
+                <td>${d.count}</td>
+                <td>${pct(avg)}</td>
+                <td><span class="badge ${badge}">${stato}</span></td>
+                <td>Oggi ${h}:${m}</td>
+            </tr>`;
+        });
+
+        document.getElementById('zoneTable').innerHTML = rows.join('');
+    }
+
+    /* ── 4. Waste Types ──────────────────────────────── */
+    function renderWasteTypes() {
+        const typeMeta = {
+            organico:         { emoji: '🟢', label: 'Organico' },
+            carta:            { emoji: '🔵', label: 'Carta' },
+            plastica:         { emoji: '🟠', label: 'Plastica' },
+            vetro:            { emoji: '🟣', label: 'Vetro' },
+            indifferenziato:  { emoji: '⚫', label: 'Indifferenziato' }
+        };
+
+        const typeStats = {};
+        wastePoints.forEach((p, i) => {
+            (p.types || []).forEach(t => {
+                if (!typeStats[t]) typeStats[t] = { count: 0, fills: [], fillsYday: [] };
+                typeStats[t].count++;
+                typeStats[t].fills.push(fillLevels[i]);
+                typeStats[t].fillsYday.push(fillLevelsYday[i]);
+            });
+        });
+
+        document.getElementById('wasteGrid').innerHTML = Object.keys(typeMeta).map(t => {
+            const meta = typeMeta[t];
+            const s = typeStats[t] || { count: 0, fills: [0], fillsYday: [0] };
+            const avg = s.fills.reduce((a, b) => a + b, 0) / (s.fills.length || 1);
+            const avgY = s.fillsYday.reduce((a, b) => a + b, 0) / (s.fillsYday.length || 1);
+            const delta = avg - avgY;
+            const dir = delta >= 0 ? 'up' : 'down';
+            return `
+            <div class="waste-card">
+                <div class="waste-emoji">${meta.emoji}</div>
+                <div class="waste-info">
+                    <div class="name">${meta.label}</div>
+                    <div class="stat"><strong>${s.count}</strong> punti</div>
+                    <div class="stat">Livello medio: <strong>${pct(avg)}</strong></div>
+                    <div class="trend ${dir}" style="font-size:0.72rem;margin-top:3px;">
+                        ${dir === 'up' ? '↑' : '↓'} ${Math.abs(delta).toFixed(1)}% vs ieri
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    /* ── 5. Confronto Oggi vs Ieri ───────────────────── */
+    function renderCompare() {
+        const avgToday = fillLevels.reduce((a, b) => a + b, 0) / fillLevels.length;
+        const avgYday = fillLevelsYday.reduce((a, b) => a + b, 0) / fillLevelsYday.length;
+
+        const items = [
+            { title: 'Raccolte Effettuate', oggi: rand(85, 120), ieri: rand(85, 120), unit: '' },
+            { title: 'Segnalazioni Ricevute', oggi: rand(12, 35), ieri: rand(12, 35), unit: '' },
+            { title: 'Livello Medio Riempimento', oggi: +avgToday.toFixed(1), ieri: +avgYday.toFixed(1), unit: '%' },
+            { title: 'Mezzi Operativi', oggi: rand(14, 22), ieri: rand(14, 22), unit: '' }
+        ];
+
+        document.getElementById('compareGrid').innerHTML = items.map(it => {
+            const diff = it.oggi - it.ieri;
+            const dir = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
+            const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+            return `
+            <div class="compare-card">
+                <div class="title">${it.title}</div>
+                <div class="compare-row">
+                    <div class="compare-val">
+                        <div class="num">${it.oggi}${it.unit}</div>
+                        <div class="sub">Oggi</div>
+                    </div>
+                    <div class="compare-arrow ${dir}">${arrow} ${parseFloat(Math.abs(diff).toFixed(1))}${it.unit}</div>
+                    <div class="compare-val">
+                        <div class="num" style="color:var(--text-light);">${it.ieri}${it.unit}</div>
+                        <div class="sub">Ieri</div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    /* ── 6. Mini Map ─────────────────────────────────── */
+    function initMap() {
+        if (map) return;
+        map = L.map('minimap', { scrollWheelZoom: false }).setView([37.517, 15.087], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap',
+            maxZoom: 18
+        }).addTo(map);
+
+        // Collection center markers
+        const centerIcon = L.divIcon({
+            className: '',
+            html: '<div class="center-marker"><i class="fas fa-warehouse"></i></div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        centers.forEach(c => {
+            L.marker([c.lat, c.lng], { icon: centerIcon })
+                .addTo(map)
+                .bindPopup(`<strong>${c.name}</strong><br>${c.address || 'Catania'}`);
+        });
+
+        // Zone density circles
+        const zoneCoords = {};
+        wastePoints.forEach(p => {
+            const z = p.zona || 'Altro';
+            if (!zoneCoords[z]) zoneCoords[z] = { lats: [], lngs: [], count: 0 };
+            zoneCoords[z].lats.push(p.lat);
+            zoneCoords[z].lngs.push(p.lng);
+            zoneCoords[z].count++;
+        });
+
+        const zoneColors = {
+            'ZONA CENTRO': '#e74c3c',
+            'ZONA NORD': '#2980b9',
+            'CATANIA': '#27ae60'
+        };
+
+        Object.keys(zoneCoords).forEach(z => {
+            const d = zoneCoords[z];
+            const cLat = d.lats.reduce((a, b) => a + b, 0) / d.lats.length;
+            const cLng = d.lngs.reduce((a, b) => a + b, 0) / d.lngs.length;
+            const color = zoneColors[z] || '#667eea';
+            const radius = Math.max(400, Math.sqrt(d.count) * 30);
+
+            L.circle([cLat, cLng], {
+                radius: radius,
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.15,
+                weight: 2,
+                opacity: 0.5
+            }).addTo(map).bindPopup(`<strong>${z}</strong><br>${d.count} punti di raccolta`);
+        });
+    }
+
+    /* ── 7. Avvisi Recenti ───────────────────────────── */
+    function renderAlerts() {
+        const templates = [
+            { text: 'Zona Centro: {n} punti al 90% capacità — intervento richiesto', sev: 'high', icon: 'fas fa-exclamation-triangle', nRange: [2, 5] },
+            { text: 'Centro Raccolta Picanello: affluenza elevata nelle ultime 2 ore', sev: 'medium', icon: 'fas fa-users' },
+            { text: 'Raccolta organico completata — Via Etnea e limitrofe', sev: 'low', icon: 'fas fa-check' },
+            { text: 'Zona Nord: livello medio salito al {p}% — monitorare', sev: 'medium', icon: 'fas fa-arrow-up', pRange: [65, 82] },
+            { text: 'Segnalazione cittadino: cassonetto pieno in Via Crociferi', sev: 'high', icon: 'fas fa-flag' },
+            { text: 'Centro Raccolta Cairoli: operatività regolare', sev: 'low', icon: 'fas fa-info-circle' }
+        ];
+
+        const minutesAgo = [3, 12, 28, 47, 65, 91];
+
+        document.getElementById('alertsList').innerHTML = templates.map((t, i) => {
+            let text = t.text;
+            if (t.nRange) text = text.replace('{n}', rand(t.nRange[0], t.nRange[1]));
+            if (t.pRange) text = text.replace('{p}', rand(t.pRange[0], t.pRange[1]));
+            return `
+            <div class="alert-item severity-${t.sev}">
+                <div class="alert-icon ${t.sev}"><i class="${t.icon}"></i></div>
+                <div class="alert-text">${text}</div>
+                <div class="alert-time">${timeAgo(minutesAgo[i])}</div>
+            </div>`;
+        }).join('');
+    }
+
+    /* ── Auto-refresh ─────────────────────────────────── */
+    function refresh() {
+        simulateFills();
+        render();
+    }
+
+    /* ── Init ─────────────────────────────────────────── */
+    loadData().catch(err => {
+        console.error('Errore caricamento dati:', err);
+        document.getElementById('kpiGrid').innerHTML =
+            '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--red);">' +
+            '<i class="fas fa-exclamation-circle"></i> Errore nel caricamento dei dati. Verifica che i file JSON siano presenti nella cartella data/.</div>';
+    });
+
+    setInterval(refresh, 30000);
+})();
+</script>
+</body>
+</html>

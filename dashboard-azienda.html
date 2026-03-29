@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Briller.AI — Dashboard Azienda · Gestione Operativa</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+/* ── Variables ──────────────────────────────────── */
+:root {
+    --primary: #1a7a4a;
+    --primary-light: #27ae60;
+    --accent: #667eea;
+    --accent-light: #8b9cf7;
+    --dark-bg: #1a1a2e;
+    --darker-bg: #12121f;
+    --card-bg: #2d2d44;
+    --card-bg-light: #363652;
+    --text-white: #e8e8f0;
+    --text-muted: #9a9ab0;
+    --orange: #f39c12;
+    --amber: #ffb347;
+    --red: #e74c3c;
+    --green-dot: #2ecc71;
+    --blue: #2980b9;
+    --purple: #9b59b6;
+    --shadow: 0 4px 16px rgba(0,0,0,0.25);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.35);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --sidebar-w: 320px;
+    --navbar-h: 56px;
+    --camera-panel-w: 380px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--darker-bg);
+    color: var(--text-white);
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* ── Scrollbar ─────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+/* ── Navbar ─────────────────────────────────────── */
+.navbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; height: var(--navbar-h);
+    background: rgba(26,26,46,0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(102,126,234,0.2);
+    box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+}
+.nav-left { display: flex; align-items: center; gap: 10px; }
+.nav-brand {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 1.15rem; font-weight: 700; color: var(--primary-light);
+    text-decoration: none;
+}
+.nav-brand i { font-size: 1.2rem; }
+.nav-title {
+    font-size: 0.85rem; color: var(--text-muted);
+    border-left: 1px solid rgba(255,255,255,0.15); padding-left: 12px; margin-left: 4px;
+    white-space: nowrap;
+}
+.nav-links { display: flex; align-items: center; gap: 4px; }
+.nav-links a {
+    text-decoration: none; font-size: 0.78rem; font-weight: 500;
+    padding: 6px 12px; border-radius: 8px; color: var(--text-muted);
+    transition: all 0.2s;
+}
+.nav-links a:hover { background: rgba(102,126,234,0.15); color: var(--text-white); }
+.nav-links a.active { background: var(--accent); color: #fff; }
+.nav-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.75rem; color: var(--green-dot);
+    margin-left: 12px; padding-left: 12px;
+    border-left: 1px solid rgba(255,255,255,0.1);
+}
+.nav-status .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green-dot);
+    animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(46,204,113,0.6); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(46,204,113,0); }
+}
+
+/* ── Main Layout ───────────────────────────────── */
+.app-layout {
+    display: flex;
+    height: calc(100vh - var(--navbar-h));
+    margin-top: var(--navbar-h);
+}
+
+/* ── Left Sidebar ──────────────────────────────── */
+.sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--dark-bg);
+    border-right: 1px solid rgba(255,255,255,0.06);
+    overflow-y: auto;
+    transition: margin-left 0.3s;
+    display: flex; flex-direction: column;
+}
+.sidebar.collapsed { margin-left: calc(-1 * var(--sidebar-w)); }
+.sidebar-toggle {
+    position: fixed; top: calc(var(--navbar-h) + 10px); left: 10px; z-index: 999;
+    background: var(--card-bg); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-white); border-radius: 8px;
+    width: 34px; height: 34px; cursor: pointer; font-size: 0.9rem;
+    display: none; align-items: center; justify-content: center;
+    transition: all 0.2s;
+}
+.sidebar.collapsed ~ .main-content .sidebar-toggle { display: flex; }
+
+.panel {
+    padding: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.panel-title {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--accent-light);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.panel-title i { font-size: 0.8rem; }
+
+/* Fleet */
+.truck-card {
+    background: var(--card-bg); border-radius: var(--radius-sm);
+    padding: 10px 12px; margin-bottom: 8px;
+    border-left: 3px solid var(--accent);
+    transition: all 0.2s;
+}
+.truck-card:hover { background: var(--card-bg-light); }
+.truck-card.status-active { border-left-color: var(--green-dot); }
+.truck-card.status-loading { border-left-color: var(--orange); }
+.truck-card.status-maintenance { border-left-color: var(--red); }
+.truck-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.truck-id { font-weight: 700; font-size: 0.82rem; }
+.truck-driver { font-size: 0.72rem; color: var(--text-muted); }
+.truck-status {
+    font-size: 0.65rem; padding: 2px 8px; border-radius: 10px;
+    font-weight: 600; text-transform: uppercase;
+}
+.truck-status.active { background: rgba(46,204,113,0.2); color: var(--green-dot); }
+.truck-status.loading { background: rgba(243,156,18,0.2); color: var(--orange); }
+.truck-status.maintenance { background: rgba(231,76,60,0.2); color: var(--red); }
+.truck-load-bar {
+    height: 5px; background: rgba(255,255,255,0.08);
+    border-radius: 3px; overflow: hidden; margin: 4px 0;
+}
+.truck-load-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+.truck-meta { display: flex; justify-content: space-between; align-items: center; }
+.truck-type { font-size: 0.68rem; color: var(--text-muted); }
+.truck-load-pct { font-size: 0.68rem; font-weight: 600; }
+.btn-route {
+    margin-top: 6px; width: 100%; padding: 5px 0; border: none;
+    border-radius: 6px; background: rgba(102,126,234,0.2);
+    color: var(--accent-light); font-size: 0.7rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+}
+.btn-route:hover { background: rgba(102,126,234,0.35); }
+
+/* IoT Sensors */
+.sensor-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.8rem;
+}
+.sensor-row:last-child { border-bottom: none; }
+.sensor-label { color: var(--text-muted); }
+.sensor-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Meteo */
+.meteo-box {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--card-bg); border-radius: var(--radius-sm); padding: 12px;
+}
+.meteo-icon { font-size: 2rem; }
+.meteo-temp { font-size: 1.4rem; font-weight: 700; }
+.meteo-detail { font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
+
+/* Filter Buttons */
+.filter-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-btn {
+    padding: 6px 12px; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px; background: var(--card-bg); color: var(--text-white);
+    font-size: 0.75rem; cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; gap: 4px;
+}
+.filter-btn:hover { border-color: var(--accent); }
+.filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Alerts */
+.alert-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; margin-bottom: 6px;
+    border-radius: var(--radius-sm); font-size: 0.75rem;
+    animation: slideIn 0.3s;
+    border-left: 3px solid transparent;
+}
+.alert-item.traffic { background: rgba(243,156,18,0.12); border-left-color: var(--orange); }
+.alert-item.weather { background: rgba(41,128,185,0.12); border-left-color: var(--blue); }
+.alert-item.event { background: rgba(155,89,182,0.12); border-left-color: var(--purple); }
+.alert-item.capacity { background: rgba(231,76,60,0.12); border-left-color: var(--red); }
+.alert-time { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; }
+@keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ── Main Content ──────────────────────────────── */
+.main-content {
+    flex: 1; display: flex; flex-direction: column;
+    overflow: hidden; position: relative;
+}
+
+.map-area {
+    flex: 1; position: relative; min-height: 0;
+}
+#map { width: 100%; height: 100%; }
+
+/* Map overlay controls */
+.map-stats {
+    position: absolute; top: 12px; left: 12px; z-index: 800;
+    display: flex; gap: 8px;
+}
+.map-stat-badge {
+    background: rgba(26,26,46,0.88); backdrop-filter: blur(8px);
+    padding: 6px 12px; border-radius: 8px; font-size: 0.72rem;
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-white);
+}
+.map-stat-badge .num { font-weight: 700; color: var(--accent-light); }
+
+/* ── Detail Section (below map) ────────────────── */
+.detail-section {
+    height: 280px; min-height: 200px;
+    background: var(--dark-bg);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex; flex-direction: column;
+}
+.detail-tabs {
+    display: flex; gap: 0; background: var(--darker-bg);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 0 12px;
+}
+.detail-tab {
+    padding: 10px 18px; font-size: 0.78rem; font-weight: 600;
+    color: var(--text-muted); cursor: pointer; border: none;
+    background: none; border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+.detail-tab:hover { color: var(--text-white); }
+.detail-tab.active { color: var(--accent-light); border-bottom-color: var(--accent); }
+.detail-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+}
+.detail-table {
+    width: 100%; border-collapse: collapse; font-size: 0.75rem;
+}
+.detail-table th {
+    text-align: left; padding: 8px 10px; color: var(--text-muted);
+    font-weight: 600; text-transform: uppercase; font-size: 0.68rem;
+    letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: sticky; top: 0; background: var(--dark-bg);
+}
+.detail-table td {
+    padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.03);
+    color: var(--text-white);
+}
+.detail-table tr:hover td { background: rgba(255,255,255,0.03); }
+.badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 0.65rem; font-weight: 600;
+}
+.badge-danger { background: rgba(231,76,60,0.2); color: var(--red); }
+.badge-warning { background: rgba(243,156,18,0.2); color: var(--orange); }
+.badge-success { background: rgba(46,204,113,0.2); color: var(--green-dot); }
+.badge-info { background: rgba(102,126,234,0.2); color: var(--accent-light); }
+.btn-sm {
+    padding: 3px 10px; border: none; border-radius: 6px;
+    font-size: 0.68rem; font-weight: 600; cursor: pointer;
+    background: rgba(102,126,234,0.2); color: var(--accent-light);
+    transition: all 0.2s;
+}
+.btn-sm:hover { background: rgba(102,126,234,0.4); }
+
+/* ── Right Panel (Cameras) ─────────────────────── */
+.camera-panel {
+    width: var(--camera-panel-w);
+    min-width: var(--camera-panel-w);
+    background: var(--dark-bg);
+    border-left: 1px solid rgba(255,255,255,0.06);
+    display: flex; flex-direction: column;
+    transition: margin-right 0.3s;
+}
+.camera-panel.hidden { margin-right: calc(-1 * var(--camera-panel-w)); }
+.camera-panel-header {
+    padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    background: var(--darker-bg);
+}
+.camera-panel-title {
+    font-size: 0.82rem; font-weight: 700; color: var(--amber);
+    display: flex; align-items: center; gap: 6px;
+}
+.btn-toggle-cam {
+    background: var(--card-bg); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-white); border-radius: 6px; padding: 4px 10px;
+    font-size: 0.7rem; cursor: pointer; transition: all 0.2s;
+}
+.btn-toggle-cam:hover { background: var(--card-bg-light); }
+.camera-list {
+    flex: 1; overflow-y: auto; padding: 10px;
+}
+.camera-card {
+    background: var(--card-bg); border-radius: var(--radius-sm);
+    margin-bottom: 10px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: all 0.3s;
+}
+.camera-card.highlighted {
+    border-color: var(--amber);
+    box-shadow: 0 0 16px rgba(255,179,71,0.25);
+}
+.camera-card.expanded .camera-feed { height: 220px; }
+.camera-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 10px; background: rgba(0,0,0,0.2);
+}
+.camera-name { font-size: 0.75rem; font-weight: 600; }
+.camera-status {
+    font-size: 0.62rem; padding: 2px 7px; border-radius: 8px; font-weight: 600;
+}
+.camera-status.online { background: rgba(46,204,113,0.2); color: var(--green-dot); }
+.camera-status.offline { background: rgba(231,76,60,0.2); color: var(--red); }
+.camera-feed {
+    height: 140px; position: relative; background: #111;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+}
+.camera-feed iframe {
+    width: 100%; height: 100%; border: none;
+}
+.camera-placeholder {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; color: var(--text-muted); gap: 6px;
+    text-align: center; padding: 10px;
+}
+.camera-placeholder i { font-size: 2rem; opacity: 0.3; }
+.camera-placeholder .msg { font-size: 0.68rem; }
+.camera-live-badge {
+    position: absolute; top: 6px; left: 6px;
+    background: rgba(231,76,60,0.9); color: #fff;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.6rem; font-weight: 700;
+    display: flex; align-items: center; gap: 4px;
+}
+.camera-live-badge .rec-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #fff; animation: blink 1s infinite;
+}
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.camera-card-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px; font-size: 0.65rem; color: var(--text-muted);
+}
+.btn-expand {
+    background: rgba(255,179,71,0.15); border: none; color: var(--amber);
+    padding: 3px 8px; border-radius: 5px; font-size: 0.65rem;
+    cursor: pointer; font-weight: 600; transition: all 0.2s;
+}
+.btn-expand:hover { background: rgba(255,179,71,0.3); }
+
+/* Camera toggle button (visible when panel hidden) */
+.camera-toggle-floating {
+    position: fixed; top: calc(var(--navbar-h) + 10px); right: 10px; z-index: 999;
+    background: var(--amber); color: var(--dark-bg); border: none;
+    border-radius: 8px; padding: 8px 12px; cursor: pointer;
+    font-size: 0.78rem; font-weight: 700;
+    display: none; align-items: center; gap: 6px;
+    box-shadow: var(--shadow);
+}
+.camera-panel.hidden ~ .camera-toggle-floating { display: flex; }
+
+/* ── Utilities ─────────────────────────────────── */
+.fill-bar { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+.fill-bar-inner { height: 100%; border-radius: 3px; transition: width 0.5s; }
+
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+
+/* Leaflet popup styling override */
+.leaflet-popup-content-wrapper {
+    background: var(--card-bg) !important;
+    color: var(--text-white) !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+.leaflet-popup-tip { background: var(--card-bg) !important; }
+.leaflet-popup-content { font-size: 0.8rem !important; }
+.leaflet-popup-content a { color: var(--accent-light) !important; }
+    </style>
+</head>
+<body>
+
+<!-- ─── Navbar ─────────────────────────────────────────────── -->
+<nav class="navbar">
+    <div class="nav-left">
+        <a href="index.html" class="nav-brand"><i class="fas fa-leaf"></i> Briller.AI</a>
+        <span class="nav-title">Dashboard Azienda — Gestione Operativa</span>
+    </div>
+    <div style="display:flex;align-items:center;">
+        <div class="nav-links">
+            <a href="dashboard-comune.html"><i class="fas fa-landmark"></i> Dashboard Comune</a>
+            <a href="dashboard-azienda.html" class="active"><i class="fas fa-truck"></i> Dashboard Azienda</a>
+            <a href="index.html"><i class="fas fa-home"></i> Home</a>
+            <a href="demo.html"><i class="fas fa-flask"></i> Demo Tecnica</a>
+        </div>
+        <div class="nav-status">
+            <span class="dot"></span> Sistema Operativo
+        </div>
+    </div>
+</nav>
+
+<!-- ─── App Layout ────────────────────────────────────────── -->
+<div class="app-layout">
+
+<!-- ─── Left Sidebar ──────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+
+    <!-- Panel: Flotta Mezzi -->
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-truck-moving"></i> Flotta Mezzi</div>
+        <div id="fleet-container"></div>
+    </div>
+
+    <!-- Panel: Sensori IoT -->
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-satellite-dish"></i> Sensori IoT</div>
+        <div id="iot-container">
+            <div class="sensor-row"><span class="sensor-label">🔊 Rumore</span><span class="sensor-value" id="s-noise">— dB</span></div>
+            <div class="sensor-row"><span class="sensor-label">👥 Affollamento</span><span class="sensor-value" id="s-crowd">— %</span></div>
+            <div class="sensor-row"><span class="sensor-label">🚗 Traffico</span><span class="sensor-value" id="s-traffic">— %</span></div>
+            <div class="sensor-row"><span class="sensor-label">📱 Segnalazioni</span><span class="sensor-value" id="s-reports">0</span></div>
+        </div>
+        <div style="font-size:0.62rem;color:var(--text-muted);margin-top:6px;text-align:right;">Aggiornamento ogni 8s</div>
+    </div>
+
+    <!-- Panel: Meteo -->
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-cloud-sun"></i> Meteo Catania</div>
+        <div class="meteo-box">
+            <span class="meteo-icon" id="meteo-icon">☀️</span>
+            <div>
+                <div class="meteo-temp" id="meteo-temp">28°C</div>
+                <div class="meteo-detail" id="meteo-detail">Vento: 12 km/h<br>Umidità: 55%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel: Filtri Rapidi -->
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-filter"></i> Filtri Rapidi</div>
+        <div class="filter-grid">
+            <button class="filter-btn active" data-type="all">Mostra Tutti</button>
+            <button class="filter-btn" data-type="organico">🟢 Organico</button>
+            <button class="filter-btn" data-type="carta">🔵 Carta</button>
+            <button class="filter-btn" data-type="plastica">🟠 Plastica</button>
+            <button class="filter-btn" data-type="vetro">🟣 Vetro</button>
+            <button class="filter-btn" data-type="indifferenziato">⚫ Indiff.</button>
+        </div>
+    </div>
+
+    <!-- Panel: Avvisi -->
+    <div class="panel" style="flex:1;min-height:120px;">
+        <div class="panel-title"><i class="fas fa-bell"></i> Avvisi in Tempo Reale</div>
+        <div id="alerts-container"></div>
+    </div>
+
+</aside>
+
+<!-- ─── Main Content ──────────────────────────────────────── -->
+<div class="main-content">
+    <button class="sidebar-toggle" id="btn-sidebar" title="Mostra sidebar"><i class="fas fa-bars"></i></button>
+
+    <!-- Map Area -->
+    <div class="map-area">
+        <div id="map"></div>
+        <div class="map-stats">
+            <div class="map-stat-badge"><i class="fas fa-map-pin" style="color:var(--primary-light)"></i> Punti: <span class="num" id="stat-points">0</span></div>
+            <div class="map-stat-badge"><i class="fas fa-truck" style="color:var(--orange)"></i> Mezzi: <span class="num" id="stat-trucks">0</span></div>
+            <div class="map-stat-badge"><i class="fas fa-video" style="color:var(--amber)"></i> Cam: <span class="num" id="stat-cams">0</span></div>
+            <div class="map-stat-badge"><i class="fas fa-exclamation-triangle" style="color:var(--red)"></i> Critici: <span class="num" id="stat-critical">0</span></div>
+        </div>
+    </div>
+
+    <!-- Detail Section -->
+    <div class="detail-section">
+        <div class="detail-tabs">
+            <button class="detail-tab active" data-tab="critical"><i class="fas fa-exclamation-circle"></i> Punti Critici</button>
+            <button class="detail-tab" data-tab="history"><i class="fas fa-history"></i> Storico Raccolte</button>
+            <button class="detail-tab" data-tab="reports"><i class="fas fa-bullhorn"></i> Segnalazioni Cittadini</button>
+        </div>
+        <div class="detail-body" id="detail-body">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+</div>
+
+<!-- ─── Right Camera Panel ────────────────────────────────── -->
+<div class="camera-panel" id="camera-panel">
+    <div class="camera-panel-header">
+        <span class="camera-panel-title"><i class="fas fa-video"></i> Videocamere di Sorveglianza</span>
+        <button class="btn-toggle-cam" id="btn-hide-cam" title="Nascondi"><i class="fas fa-chevron-right"></i></button>
+    </div>
+    <div class="camera-list" id="camera-list"></div>
+</div>
+<button class="camera-toggle-floating" id="btn-show-cam"><i class="fas fa-video"></i> 📹 Videocamere</button>
+
+</div><!-- /app-layout -->
+
+<!-- ─── Scripts ────────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function() {
+'use strict';
+
+/* ════════════════════════════════════════════════════
+   DATA & CONFIG
+   ════════════════════════════════════════════════════ */
+
+const WASTE_COLORS = {
+    organico: '#4CAF50',
+    carta: '#2196F3',
+    plastica: '#FF9800',
+    vetro: '#009688',
+    indifferenziato: '#607D8B'
+};
+
+const WASTE_LABELS = {
+    organico: 'Organico',
+    carta: 'Carta',
+    plastica: 'Plastica',
+    vetro: 'Vetro',
+    indifferenziato: 'Indifferenziato'
+};
+
+const FLEET = [
+    { id: 'CT-001', driver: 'Marco Ferrara', type: 'organico', status: 'active', load: 35 },
+    { id: 'CT-002', driver: 'Luca Romano', type: 'carta', status: 'active', load: 62 },
+    { id: 'CT-003', driver: 'Giuseppe Catania', type: 'plastica', status: 'loading', load: 88 },
+    { id: 'CT-004', driver: 'Andrea Messina', type: 'vetro', status: 'active', load: 21 },
+    { id: 'CT-005', driver: 'Salvatore Ferrara', type: 'indifferenziato', status: 'maintenance', load: 0 }
+];
+
+const STATUS_LABELS = { active: 'Attivo', loading: 'In carico', maintenance: 'Manutenzione' };
+
+const CAMERAS = [
+    { id: 'cam1', name: 'Cam 1 - Vista Etna / Via Etnea', lat: 37.508, lng: 15.088, online: true, hasStream: true,
+      streamUrl: 'https://www.skylinewebcams.com/it/webcam/italia/sicilia/catania/etna.html' },
+    { id: 'cam2', name: 'Cam 2 - Centro Storico', lat: 37.502, lng: 15.087, online: true, hasStream: true,
+      streamUrl: 'https://www.skylinewebcams.com/it/webcam/italia/sicilia/catania/catania-centro.html' },
+    { id: 'cam3', name: 'Cam 3 - Zona Picanello', lat: 37.529, lng: 15.102, online: true, hasStream: false },
+    { id: 'cam4', name: 'Cam 4 - Zona Borgo-Sanzio', lat: 37.525, lng: 15.094, online: true, hasStream: false },
+    { id: 'cam5', name: 'Cam 5 - Zona Porto', lat: 37.498, lng: 15.094, online: false, hasStream: false },
+    { id: 'cam6', name: 'Cam 6 - Zona Cairoli', lat: 37.506, lng: 15.067, online: true, hasStream: false }
+];
+
+/* ════════════════════════════════════════════════════
+   STATE
+   ════════════════════════════════════════════════════ */
+let map, wastePoints = [], collectionCenters = [];
+let wasteMarkers = [], truckMarkers = [], cameraMarkers = [];
+let activeFilter = 'all', activeTab = 'critical';
+let reportCount = 0;
+let truckPositions = FLEET.map(t => ({
+    ...t,
+    lat: 37.5079 + (Math.random() - 0.5) * 0.03,
+    lng: 15.0830 + (Math.random() - 0.5) * 0.03
+}));
+
+/* ════════════════════════════════════════════════════
+   INIT
+   ════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', async () => {
+    try { initMap(); } catch(e) { console.warn('Mappa non disponibile:', e); }
+    initUI();
+    await loadData();
+    renderFleet();
+    renderCameras();
+    if (map) renderMapOverlays();
+    updateDetailTable();
+    startSimulations();
+});
+
+/* ════════════════════════════════════════════════════
+   MAP
+   ════════════════════════════════════════════════════ */
+function initMap() {
+    map = L.map('map', { zoomControl: true }).setView([37.5079, 15.0830], 13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a> | Briller.AI Smart Waste',
+        maxZoom: 19
+    }).addTo(map);
+}
+
+/* ════════════════════════════════════════════════════
+   DATA LOADING
+   ════════════════════════════════════════════════════ */
+async function loadData() {
+    try {
+        const [wpRes, ccRes] = await Promise.all([
+            fetch('data/waste_points.json'),
+            fetch('data/collection_centers.json')
+        ]);
+        if (wpRes.ok) wastePoints = await wpRes.json();
+        if (ccRes.ok) collectionCenters = await ccRes.json();
+    } catch (e) {
+        console.warn('Errore caricamento dati:', e);
+    }
+    // Assign simulated fill levels
+    wastePoints.forEach(p => {
+        p.fillLevel = Math.random() * 100;
+        p.lastCollection = randomPastDate(3);
+    });
+}
+
+/* ════════════════════════════════════════════════════
+   RENDER MAP OVERLAYS
+   ════════════════════════════════════════════════════ */
+function renderMapOverlays() {
+    renderWasteMarkers();
+    renderCenterMarkers();
+    renderTruckMarkers();
+    renderCameraMarkers();
+    updateStats();
+}
+
+function renderWasteMarkers() {
+    wasteMarkers.forEach(m => map.removeLayer(m));
+    wasteMarkers = [];
+    let critCount = 0;
+
+    wastePoints.forEach(p => {
+        // Determine primary type
+        const pType = (p.types && p.types.length > 0) ? p.types[0] : 'indifferenziato';
+        if (activeFilter !== 'all' && pType !== activeFilter) return;
+
+        const fill = p.fillLevel || 0;
+        const color = WASTE_COLORS[pType] || '#607D8B';
+        const sz = 10 + Math.floor(fill / 10) * 1.8;
+        if (fill >= 80) critCount++;
+
+        const statusEmoji = fill >= 95 ? '🔴' : fill >= 80 ? '🟡' : '';
+
+        const icon = L.divIcon({
+            html: '<div style="' +
+                'background:' + color + ';width:' + sz + 'px;height:' + sz + 'px;' +
+                'border-radius:50%;border:2px solid rgba(255,255,255,0.6);' +
+                'box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;' +
+                'color:#fff;font-size:' + (sz > 20 ? 9 : 7) + 'px;font-weight:700;cursor:pointer;' +
+                (fill >= 90 ? 'animation:pulse 1.5s infinite;' : '') +
+                '">' + statusEmoji + '</div>',
+            className: 'waste-icon',
+            iconSize: [sz, sz],
+            iconAnchor: [sz / 2, sz / 2]
+        });
+
+        const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+
+        const typesStr = (p.types || [pType]).map(t => WASTE_LABELS[t] || t).join(', ');
+        const lastCol = p.lastCollection ? new Date(p.lastCollection).toLocaleDateString('it-IT') : 'N/A';
+        m.bindPopup(
+            '<div style="padding:8px;min-width:200px;">' +
+                '<h4 style="color:' + color + ';margin-bottom:6px;">' + (WASTE_LABELS[pType] || pType) + '</h4>' +
+                '<p><strong>📍 Indirizzo:</strong> ' + (p.address || 'N/A') + '</p>' +
+                '<p><strong>🗺️ Zona:</strong> ' + (p.zona || 'N/A') + '</p>' +
+                '<p><strong>♻️ Tipi:</strong> ' + typesStr + '</p>' +
+                '<p><strong>📊 Riempimento:</strong> ' + fill.toFixed(1) + '%</p>' +
+                '<div style="background:rgba(255,255,255,0.1);border-radius:6px;height:6px;margin:4px 0;overflow:hidden;">' +
+                    '<div style="background:' + color + ';height:100%;width:' + Math.min(100, fill) + '%;border-radius:6px;"></div>' +
+                '</div>' +
+                '<p><strong>🔑 Kit ID:</strong> ' + (p.kitId || 'N/A') + '</p>' +
+                '<p><strong>📅 Ultima raccolta:</strong> ' + lastCol + '</p>' +
+            '</div>'
+        );
+        wasteMarkers.push(m);
+    });
+
+    document.getElementById('stat-critical').textContent = critCount;
+}
+
+function renderCenterMarkers() {
+    collectionCenters.forEach(c => {
+        const icon = L.divIcon({
+            html: '<div style="background:#9C27B0;width:32px;height:32px;border-radius:50%;' +
+                'border:3px solid #fff;box-shadow:0 3px 12px rgba(0,0,0,0.5);display:flex;align-items:center;' +
+                'justify-content:center;font-size:16px;cursor:pointer;">🏢</div>',
+            className: 'center-icon',
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+        });
+        const m = L.marker([c.lat, c.lng], { icon }).addTo(map);
+        m.bindPopup(
+            '<div style="padding:8px;min-width:200px;">' +
+                '<h4 style="color:#9C27B0;margin-bottom:6px;">🏢 ' + c.name + '</h4>' +
+                '<p><strong>📍 Indirizzo:</strong> ' + (c.address || 'N/A') + '</p>' +
+                '<p><strong>📊 Coordinate:</strong> ' + c.lat.toFixed(5) + ', ' + c.lng.toFixed(5) + '</p>' +
+                '<div style="margin-top:8px;padding:6px;background:rgba(156,39,176,0.15);border-radius:6px;">' +
+                    '<small style="color:#CE93D8;">Centro Comunale di Raccolta</small>' +
+                '</div>' +
+            '</div>'
+        );
+    });
+}
+
+function renderTruckMarkers() {
+    truckMarkers.forEach(m => map.removeLayer(m));
+    truckMarkers = [];
+    truckPositions.forEach(t => {
+        const icon = L.divIcon({
+            html: '<div style="font-size:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));cursor:pointer;" title="' + t.id + ' - ' + t.driver + '">🚛</div>',
+            className: 'truck-icon',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+        const m = L.marker([t.lat, t.lng], { icon }).addTo(map);
+        m.bindPopup(
+            '<div style="padding:8px;min-width:180px;">' +
+                '<h4 style="color:var(--orange);margin-bottom:6px;">🚛 ' + t.id + '</h4>' +
+                '<p><strong>Autista:</strong> ' + t.driver + '</p>' +
+                '<p><strong>Stato:</strong> ' + STATUS_LABELS[t.status] + '</p>' +
+                '<p><strong>Carico:</strong> ' + t.load + '%</p>' +
+                '<p><strong>Tipo:</strong> ' + (WASTE_LABELS[t.type] || t.type) + '</p>' +
+            '</div>'
+        );
+        truckMarkers.push(m);
+    });
+    document.getElementById('stat-trucks').textContent = truckPositions.length;
+}
+
+function renderCameraMarkers() {
+    cameraMarkers.forEach(m => map.removeLayer(m));
+    cameraMarkers = [];
+    CAMERAS.forEach(cam => {
+        const icon = L.divIcon({
+            html: '<div style="font-size:20px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));cursor:pointer;" title="' + cam.name + '">📹</div>',
+            className: 'camera-map-icon',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+        const m = L.marker([cam.lat, cam.lng], { icon }).addTo(map);
+        m.on('click', () => {
+            showCameraPanel();
+            highlightCamera(cam.id);
+        });
+        m.bindPopup(
+            '<div style="padding:6px;">' +
+                '<strong>' + cam.name + '</strong><br>' +
+                '<small>' + (cam.online ? '🟢 Online' : '🔴 Offline') + '</small>' +
+            '</div>'
+        );
+        cameraMarkers.push(m);
+    });
+    document.getElementById('stat-cams').textContent = CAMERAS.length;
+}
+
+function updateStats() {
+    document.getElementById('stat-points').textContent = wasteMarkers.length;
+}
+
+/* ════════════════════════════════════════════════════
+   FLEET PANEL
+   ════════════════════════════════════════════════════ */
+function renderFleet() {
+    const container = document.getElementById('fleet-container');
+    container.innerHTML = '';
+    truckPositions.forEach(t => {
+        const color = WASTE_COLORS[t.type] || '#607D8B';
+        const card = document.createElement('div');
+        card.className = 'truck-card status-' + t.status;
+        card.innerHTML =
+            '<div class="truck-header">' +
+                '<div><span class="truck-id">🚛 ' + t.id + '</span><div class="truck-driver">' + t.driver + '</div></div>' +
+                '<span class="truck-status ' + t.status + '">' + STATUS_LABELS[t.status] + '</span>' +
+            '</div>' +
+            '<div class="truck-load-bar"><div class="truck-load-fill" style="width:' + t.load + '%;background:' + color + ';"></div></div>' +
+            '<div class="truck-meta">' +
+                '<span class="truck-type">' + (WASTE_LABELS[t.type] || t.type) + '</span>' +
+                '<span class="truck-load-pct" style="color:' + color + ';">' + t.load + '%</span>' +
+            '</div>' +
+            '<button class="btn-route" onclick="calcRoute(\'' + t.id + '\')"><i class="fas fa-route"></i> Calcola Percorso</button>';
+        container.appendChild(card);
+    });
+}
+
+window.calcRoute = function(truckId) {
+    addAlert('Percorso ottimizzato calcolato per ' + truckId, 'event', '🗺️');
+};
+
+/* ════════════════════════════════════════════════════
+   CAMERA PANEL
+   ════════════════════════════════════════════════════ */
+function renderCameras() {
+    const list = document.getElementById('camera-list');
+    list.innerHTML = '';
+    CAMERAS.forEach(cam => {
+        const card = document.createElement('div');
+        card.className = 'camera-card';
+        card.id = 'camera-' + cam.id;
+
+        let feedHTML;
+        if (cam.hasStream && cam.online) {
+            feedHTML =
+                '<div class="camera-feed">' +
+                    '<div class="camera-live-badge"><span class="rec-dot"></span> LIVE</div>' +
+                    '<iframe src="' + cam.streamUrl + '" loading="lazy" sandbox="allow-scripts allow-same-origin" title="' + cam.name + '"></iframe>' +
+                '</div>';
+        } else {
+            feedHTML =
+                '<div class="camera-feed">' +
+                    (cam.online ? '<div class="camera-live-badge"><span class="rec-dot"></span> LIVE</div>' : '') +
+                    '<div class="camera-placeholder">' +
+                        '<i class="fas fa-video"></i>' +
+                        '<div class="msg">' + (cam.online ? 'Feed non disponibile — In attesa di connessione' : 'Telecamera offline') + '</div>' +
+                    '</div>' +
+                '</div>';
+        }
+
+        const ts = new Date(Date.now() - Math.random() * 300000);
+        card.innerHTML =
+            '<div class="camera-card-header">' +
+                '<span class="camera-name">' + cam.name + '</span>' +
+                '<span class="camera-status ' + (cam.online ? 'online' : 'offline') + '">' +
+                    (cam.online ? '● Online' : '● Offline') +
+                '</span>' +
+            '</div>' +
+            feedHTML +
+            '<div class="camera-card-footer">' +
+                '<span>' + cam.lat.toFixed(3) + ', ' + cam.lng.toFixed(3) + ' · ' + ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) + '</span>' +
+                '<button class="btn-expand" onclick="toggleExpandCam(\'' + cam.id + '\')"><i class="fas fa-expand"></i> Espandi</button>' +
+            '</div>';
+
+        list.appendChild(card);
+    });
+}
+
+window.toggleExpandCam = function(camId) {
+    const card = document.getElementById('camera-' + camId);
+    if (card) card.classList.toggle('expanded');
+};
+
+function showCameraPanel() {
+    document.getElementById('camera-panel').classList.remove('hidden');
+}
+
+function highlightCamera(camId) {
+    // Remove old highlight
+    document.querySelectorAll('.camera-card.highlighted').forEach(c => c.classList.remove('highlighted'));
+    const card = document.getElementById('camera-' + camId);
+    if (card) {
+        card.classList.add('highlighted');
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => card.classList.remove('highlighted'), 4000);
+    }
+}
+
+/* ════════════════════════════════════════════════════
+   DETAIL TABLES
+   ════════════════════════════════════════════════════ */
+function updateDetailTable() {
+    const body = document.getElementById('detail-body');
+    if (activeTab === 'critical') {
+        renderCriticalTable(body);
+    } else if (activeTab === 'history') {
+        renderHistoryTable(body);
+    } else {
+        renderReportsTable(body);
+    }
+}
+
+function renderCriticalTable(container) {
+    const critical = wastePoints
+        .filter(p => (p.fillLevel || 0) >= 80)
+        .sort((a, b) => b.fillLevel - a.fillLevel)
+        .slice(0, 30);
+
+    let html = '<table class="detail-table"><thead><tr>' +
+        '<th>Indirizzo</th><th>Zona</th><th>Tipo</th><th>Riempimento</th><th>Ultimo Svuotamento</th><th>Azioni</th>' +
+        '</tr></thead><tbody>';
+
+    critical.forEach(p => {
+        const pType = (p.types && p.types.length > 0) ? p.types[0] : 'indifferenziato';
+        const fill = (p.fillLevel || 0).toFixed(1);
+        const fillClass = fill >= 95 ? 'badge-danger' : 'badge-warning';
+        const lastCol = p.lastCollection ? new Date(p.lastCollection).toLocaleDateString('it-IT') : 'N/A';
+        html += '<tr>' +
+            '<td>' + (p.address || 'N/A') + '</td>' +
+            '<td>' + (p.zona || 'N/A') + '</td>' +
+            '<td style="color:' + (WASTE_COLORS[pType] || '#ccc') + '">' + (WASTE_LABELS[pType] || pType) + '</td>' +
+            '<td><span class="badge ' + fillClass + '">' + fill + '%</span></td>' +
+            '<td>' + lastCol + '</td>' +
+            '<td><button class="btn-sm" onclick="assignTruck(\'' + (p.id || '') + '\')"><i class="fas fa-truck"></i> Assegna Mezzo</button></td>' +
+            '</tr>';
+    });
+    html += '</tbody></table>';
+    if (critical.length === 0) html = '<div style="text-align:center;color:var(--text-muted);padding:30px;">Nessun punto critico al momento</div>';
+    container.innerHTML = html;
+}
+
+function renderHistoryTable(container) {
+    const zones = ['ZONA CENTRO', 'ZONA NORD', 'ZONA SUD', 'PICANELLO', 'BORGO-SANZIO', 'CAIROLI'];
+    const types = Object.keys(WASTE_COLORS);
+    const statuses = ['Completato', 'Completato', 'Completato', 'In corso', 'Programmato'];
+    let html = '<table class="detail-table"><thead><tr>' +
+        '<th>Orario</th><th>Mezzo</th><th>Zona</th><th>Tipo Rifiuto</th><th>Quantità</th><th>Stato</th>' +
+        '</tr></thead><tbody>';
+
+    for (let i = 0; i < 15; i++) {
+        const d = new Date(Date.now() - i * 1800000 - Math.random() * 600000);
+        const type = types[i % types.length];
+        const status = statuses[Math.min(i, statuses.length - 1)];
+        const statusClass = status === 'Completato' ? 'badge-success' : status === 'In corso' ? 'badge-info' : 'badge-warning';
+        html += '<tr>' +
+            '<td>' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) + '</td>' +
+            '<td>CT-' + String(((i % 5) + 1)).padStart(3, '0') + '</td>' +
+            '<td>' + zones[i % zones.length] + '</td>' +
+            '<td style="color:' + WASTE_COLORS[type] + '">' + WASTE_LABELS[type] + '</td>' +
+            '<td>' + (Math.floor(Math.random() * 400) + 100) + ' kg</td>' +
+            '<td><span class="badge ' + statusClass + '">' + status + '</span></td>' +
+            '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderReportsTable(container) {
+    const problems = [
+        'Rifiuti abbandonati', 'Cassonetto pieno', 'Cassonetto rotto',
+        'Odore sgradevole', 'Rifiuti ingombranti', 'Mancata raccolta'
+    ];
+    const addresses = [
+        'Via Etnea 45', 'Via Umberto I 22', 'Piazza Duomo', 'Via Plebiscito 88',
+        'Corso Italia 120', 'Via Crociferi 15', 'Via Sangiuliano 30', 'Piazza Stesicoro'
+    ];
+    const priorities = ['Alta', 'Alta', 'Media', 'Media', 'Bassa'];
+    const stati = ['Aperta', 'In gestione', 'Aperta', 'Risolta', 'Aperta'];
+
+    let html = '<table class="detail-table"><thead><tr>' +
+        '<th>Data/Ora</th><th>Indirizzo</th><th>Tipo Problema</th><th>Priorità</th><th>Stato</th>' +
+        '</tr></thead><tbody>';
+
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(Date.now() - i * 3600000 - Math.random() * 1800000);
+        const pri = priorities[i % priorities.length];
+        const priClass = pri === 'Alta' ? 'badge-danger' : pri === 'Media' ? 'badge-warning' : 'badge-info';
+        const stato = stati[i % stati.length];
+        const statoClass = stato === 'Risolta' ? 'badge-success' : stato === 'In gestione' ? 'badge-info' : 'badge-warning';
+        html += '<tr>' +
+            '<td>' + d.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</td>' +
+            '<td>' + addresses[i % addresses.length] + '</td>' +
+            '<td>' + problems[i % problems.length] + '</td>' +
+            '<td><span class="badge ' + priClass + '">' + pri + '</span></td>' +
+            '<td><span class="badge ' + statoClass + '">' + stato + '</span></td>' +
+            '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+window.assignTruck = function(pointId) {
+    addAlert('Mezzo assegnato al punto ' + (pointId || 'selezionato'), 'event', '🚛');
+};
+
+/* ════════════════════════════════════════════════════
+   ALERTS
+   ════════════════════════════════════════════════════ */
+function addAlert(message, type, icon) {
+    const container = document.getElementById('alerts-container');
+    while (container.children.length >= 5) {
+        container.removeChild(container.lastChild);
+    }
+    const el = document.createElement('div');
+    el.className = 'alert-item ' + type;
+    el.innerHTML =
+        '<span style="font-size:1.1em;">' + icon + '</span>' +
+        '<span style="flex:1;">' + message + '</span>' +
+        '<span class="alert-time">' + new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) + '</span>';
+    container.insertBefore(el, container.firstChild);
+}
+
+/* ════════════════════════════════════════════════════
+   SIMULATIONS
+   ════════════════════════════════════════════════════ */
+function startSimulations() {
+    // IoT sensors every 8s
+    updateIoT();
+    setInterval(updateIoT, 8000);
+
+    // Truck movement every 10s
+    setInterval(moveTrucks, 10000);
+
+    // Fill level changes every 15s
+    setInterval(updateFillLevels, 15000);
+
+    // Random alerts every 20s
+    generateAlert();
+    setInterval(generateAlert, 20000);
+
+    // Meteo refresh every 60s
+    updateMeteo();
+    setInterval(updateMeteo, 60000);
+}
+
+function updateIoT() {
+    const noise = Math.floor(Math.random() * 30) + 40;
+    const crowd = Math.floor(Math.random() * 100);
+    const traffic = Math.floor(Math.random() * 100);
+    reportCount += Math.floor(Math.random() * 3);
+
+    document.getElementById('s-noise').textContent = noise + ' dB';
+    document.getElementById('s-crowd').textContent = crowd + '%';
+    document.getElementById('s-traffic').textContent = traffic + '%';
+    document.getElementById('s-reports').textContent = reportCount;
+
+    // Sensor-triggered alerts
+    if (noise > 65) addAlert('Livello rumore elevato: ' + noise + ' dB', 'traffic', '🔊');
+    if (crowd > 85) addAlert('Alta affluenza in zona centro: ' + crowd + '%', 'event', '👥');
+    if (traffic > 85) addAlert('Traffico intenso: ' + traffic + '% — possibili ritardi', 'traffic', '🚗');
+}
+
+function moveTrucks() {
+    truckPositions.forEach(t => {
+        if (t.status === 'maintenance') return;
+        t.lat += (Math.random() - 0.5) * 0.004;
+        t.lng += (Math.random() - 0.5) * 0.004;
+        // Keep within Catania bounds
+        t.lat = Math.max(37.485, Math.min(37.535, t.lat));
+        t.lng = Math.max(15.05, Math.min(15.12, t.lng));
+        // Randomly change load
+        if (t.status === 'loading') {
+            t.load = Math.min(100, t.load + Math.floor(Math.random() * 8));
+        } else if (t.status === 'active') {
+            t.load = Math.max(0, Math.min(100, t.load + Math.floor(Math.random() * 6) - 2));
+        }
+    });
+    renderTruckMarkers();
+    renderFleet();
+}
+
+function updateFillLevels() {
+    wastePoints.forEach(p => {
+        p.fillLevel = Math.max(0, Math.min(100, (p.fillLevel || 0) + (Math.random() - 0.3) * 5));
+    });
+    renderWasteMarkers();
+    if (activeTab === 'critical') updateDetailTable();
+}
+
+function generateAlert() {
+    const alerts = [
+        { msg: 'Traffico rallentato Via Etnea — deviazione suggerita', type: 'traffic', icon: '🚗' },
+        { msg: 'Previsioni pioggia tra 2 ore — anticipare raccolta', type: 'weather', icon: '🌧️' },
+        { msg: 'Evento in Piazza Duomo — area temporaneamente chiusa', type: 'event', icon: '🎭' },
+        { msg: 'Cassonetti zona Porto oltre soglia critica', type: 'capacity', icon: '⚠️' },
+        { msg: 'Mezzo CT-003 prossimo alla capacità massima', type: 'capacity', icon: '⚠️' },
+        { msg: 'Segnalazione cittadino: rifiuti Via Plebiscito', type: 'event', icon: '📱' },
+        { msg: 'Manutenzione programmata Via Crociferi ore 14:00', type: 'traffic', icon: '🔧' },
+        { msg: 'Temperatura elevata — accelerare raccolta organico', type: 'weather', icon: '🌡️' },
+        { msg: 'Nuova zona di scarico abusivo segnalata', type: 'capacity', icon: '🚨' },
+        { msg: 'Sensore guasto in zona Picanello — tecnico inviato', type: 'event', icon: '🔌' }
+    ];
+    const a = alerts[Math.floor(Math.random() * alerts.length)];
+    addAlert(a.msg, a.type, a.icon);
+}
+
+function updateMeteo() {
+    const icons = ['☀️', '⛅', '🌤️', '🌦️'];
+    const temps = [26, 27, 28, 29, 30, 31, 32];
+    const wind = Math.floor(Math.random() * 20) + 5;
+    const humidity = Math.floor(Math.random() * 30) + 40;
+    const temp = temps[Math.floor(Math.random() * temps.length)];
+
+    document.getElementById('meteo-icon').textContent = icons[Math.floor(Math.random() * icons.length)];
+    document.getElementById('meteo-temp').textContent = temp + '°C';
+    document.getElementById('meteo-detail').innerHTML = 'Vento: ' + wind + ' km/h<br>Umidità: ' + humidity + '%';
+}
+
+/* ════════════════════════════════════════════════════
+   UI INTERACTIONS
+   ════════════════════════════════════════════════════ */
+function initUI() {
+    // Sidebar toggle
+    document.getElementById('btn-sidebar').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('collapsed');
+        setTimeout(() => map.invalidateSize(), 350);
+    });
+
+    // Camera panel toggle
+    document.getElementById('btn-hide-cam').addEventListener('click', () => {
+        document.getElementById('camera-panel').classList.add('hidden');
+        setTimeout(() => map.invalidateSize(), 350);
+    });
+    document.getElementById('btn-show-cam').addEventListener('click', () => {
+        document.getElementById('camera-panel').classList.remove('hidden');
+        setTimeout(() => map.invalidateSize(), 350);
+    });
+
+    // Filters
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeFilter = btn.dataset.type;
+            renderWasteMarkers();
+            updateStats();
+        });
+    });
+
+    // Detail tabs
+    document.querySelectorAll('.detail-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            activeTab = tab.dataset.tab;
+            updateDetailTable();
+        });
+    });
+}
+
+/* ════════════════════════════════════════════════════
+   HELPERS
+   ════════════════════════════════════════════════════ */
+function randomPastDate(daysAgo) {
+    return new Date(Date.now() - Math.random() * daysAgo * 86400000);
+}
+
+})();
+</script>
+</body>
+</html>
